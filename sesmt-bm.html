@@ -1,0 +1,2191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>SESMT B&M - Controle de Documentação</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bm-blue:#1a3d7c; --bm-orange:#e8a23a;
+    --bg:#f4f6fa; --card:#fff; --text:#1f2937; --muted:#6b7280; --border:#e5e7eb;
+    --ok:#16a34a; --warn:#f59e0b; --crit:#dc2626; --info:#2563eb;
+    --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+    --radius:10px;
+  }
+  body{background:linear-gradient(180deg,#eef2f9 0%,var(--bg) 200px) fixed}
+  .card{border-radius:var(--radius);border:1px solid rgba(0,0,0,.04)}
+  .topbar{box-shadow:0 2px 4px rgba(0,0,0,.04)}
+  .sidebar{background:linear-gradient(180deg,#fff 0%,#fafbfd 100%)}
+  .stat-card{border-radius:var(--radius);transition:transform .15s}
+  .stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.06)}
+  .btn-primary{box-shadow:0 1px 2px rgba(26,61,124,.2)}
+  table thead th:first-child{border-radius:6px 0 0 0}
+  table thead th:last-child{border-radius:0 6px 0 0}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer;border:none;font-size:14px}
+  input,select,textarea{font-family:inherit;font-size:14px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;width:100%;background:#fff}
+  textarea{resize:vertical;min-height:60px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--bm-blue);box-shadow:0 0 0 3px rgba(26,61,124,.1)}
+  label{display:block;margin-bottom:4px;font-weight:500;color:#374151;font-size:13px}
+  .btn{padding:8px 16px;border-radius:6px;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn-primary{background:var(--bm-blue);color:#fff} .btn-primary:hover{background:#162f5e}
+  .btn-secondary{background:#fff;color:var(--bm-blue);border:1px solid var(--bm-blue)} .btn-secondary:hover{background:#f0f4fb}
+  .btn-danger{background:#fee2e2;color:var(--crit)} .btn-danger:hover{background:#fecaca}
+  .btn-success{background:var(--ok);color:#fff} .btn-success:hover{background:#15803d}
+  .btn-warn{background:#fef3c7;color:#92400e}
+  .btn-sm{padding:4px 10px;font-size:12px}
+
+  /* LOGIN */
+  #loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0f254d 0%,var(--bm-blue) 50%,#0a1d3d 100%);position:relative;overflow:hidden}
+  #loginScreen::before{content:'';position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(232,162,58,.15) 0%,transparent 70%);top:-200px;right:-200px}
+  #loginScreen::after{content:'';position:absolute;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.05) 0%,transparent 70%);bottom:-200px;left:-150px}
+  .login-box{background:#fff;padding:44px 40px;border-radius:16px;width:420px;box-shadow:0 30px 70px rgba(0,0,0,.4);position:relative;z-index:1}
+  .logo{text-align:center;margin-bottom:28px}
+  .logo-name{font-size:32px;font-weight:800;color:var(--bm-blue);letter-spacing:.5px;line-height:1}
+  .logo-name span{color:var(--bm-orange)}
+  .logo-sub{font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:6px;font-weight:600;opacity:.7}
+  .form-group{margin-bottom:16px}
+  .login-hint{font-size:12px;color:var(--muted);margin-top:16px;padding:10px;background:#f9fafb;border-radius:6px}
+  .login-hint b{color:var(--text)}
+
+  /* APP */
+  #appScreen{display:none}
+  .topbar{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:50}
+  .topbar-left{display:flex;align-items:center;gap:30px}
+  .topbar .logo-name{font-size:18px}
+  .user-info{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
+  .user-info b{color:var(--text)}
+  .badge-role{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px}
+  .badge-role.sesmt{background:#1a3d7c;color:#fff}
+  .badge-role.coordenador,.badge-role.engenheiro{background:#0d9488;color:#fff}
+  .badge-role.visualizador{background:#6b7280;color:#fff}
+  .badge-role.empresa{background:#e8a23a;color:#fff}
+  .layout{display:flex;min-height:calc(100vh - 60px - 56px)}
+  .footer{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;border-top:1px solid var(--border);color:var(--muted);font-size:12px;height:56px}
+  .footer img{max-height:30px}
+  .sidebar{width:230px;background:#fff;border-right:1px solid var(--border);padding:16px 0}
+  .nav-section{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:14px 20px 6px;font-weight:600}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:#4b5563;font-weight:500;border-left:3px solid transparent}
+  .nav-item:hover{background:#f9fafb;color:var(--text)}
+  .nav-item.active{background:#eef2f9;color:var(--bm-blue);border-color:var(--bm-blue)}
+  .nav-icon{font-size:15px;width:18px;text-align:center}
+  .main{flex:1;padding:24px;overflow:auto}
+  .page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;gap:16px;flex-wrap:wrap}
+  .page-title{font-size:22px;font-weight:700;color:var(--text)}
+  .page-sub{color:var(--muted);font-size:13px;margin-top:2px}
+
+  /* CARDS */
+  .card{background:var(--card);border-radius:8px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px}
+  .stat-card{background:#fff;padding:18px;border-radius:8px;box-shadow:var(--shadow);border-left:4px solid var(--bm-blue)}
+  .stat-card.ok{border-color:var(--ok)}
+  .stat-card.warn{border-color:var(--warn)}
+  .stat-card.crit{border-color:var(--crit)}
+  .stat-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+  .stat-value{font-size:28px;font-weight:700;color:var(--text)}
+  .stat-sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+  /* TABLE */
+  table{width:100%;border-collapse:collapse}
+  th{background:#f9fafb;text-align:left;padding:10px 12px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+  td{padding:11px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+  tr:hover td{background:#fafbfc}
+  .status{display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+  .status.ok{background:#dcfce7;color:#166534}
+  .status.warn{background:#fef3c7;color:#92400e}
+  .status.crit{background:#fee2e2;color:#991b1b}
+  .status.pendente{background:#e5e7eb;color:#4b5563}
+  .status.info{background:#dbeafe;color:#1e40af}
+
+  /* MODAL */
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:#fff;border-radius:12px;width:100%;max-width:700px;max-height:92vh;overflow:auto}
+  .modal.lg{max-width:900px}
+  .modal-header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:1}
+  .modal-title{font-size:18px;font-weight:600}
+  .modal-close{background:none;color:var(--muted);font-size:22px;line-height:1}
+  .modal-body{padding:20px 24px}
+  .modal-footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:#fff}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+  /* TOOLBAR / FILTROS */
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;background:#fff;padding:12px;border-radius:8px;box-shadow:var(--shadow);border-left:4px solid var(--bm-blue)}
+  .toolbar::before{content:'🔎 Filtros:';font-weight:600;color:var(--bm-blue);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-right:8px}
+  .toolbar input,.toolbar select{max-width:240px}
+  .toolbar label{margin:0;font-size:12px;white-space:nowrap}
+  .toolbar-spacer{flex:1}
+  .empty{text-align:center;padding:40px;color:var(--muted)}
+  .empty-icon{font-size:40px;margin-bottom:10px}
+  .pill{display:inline-block;background:#eef2f9;color:var(--bm-blue);padding:2px 8px;border-radius:10px;font-size:11px;margin-right:4px;margin-bottom:4px;font-weight:500}
+
+  /* CHECKBOX LIST */
+  .checkbox-list{max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px}
+  .checkbox-list label{display:flex;align-items:flex-start;gap:8px;padding:6px 10px;font-weight:400;cursor:pointer;border-radius:4px;font-size:13px}
+  .checkbox-list label:hover{background:#f9fafb}
+  .checkbox-list input{width:auto;margin-top:3px}
+  .checkbox-list .cat{font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:600;padding:8px 10px 4px;letter-spacing:1px}
+
+  .toast{position:fixed;top:80px;right:24px;background:var(--ok);color:#fff;padding:12px 18px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.2);z-index:200;animation:slideIn .3s;max-width:380px}
+  .toast.err{background:var(--crit)} .toast.warn{background:var(--warn);color:#fff}
+  @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+  .alert{padding:12px 16px;background:#fef3c7;border-left:4px solid var(--warn);border-radius:6px;margin-bottom:16px;font-size:13px}
+  .alert.info{background:#dbeafe;border-color:#3b82f6}
+  .alert.success{background:#dcfce7;border-color:var(--ok)}
+  details{margin-bottom:8px;border:1px solid var(--border);border-radius:6px}
+  summary{padding:10px 14px;cursor:pointer;font-weight:500;background:#f9fafb;border-radius:6px}
+  details[open] summary{border-bottom:1px solid var(--border);border-radius:6px 6px 0 0}
+
+  .doc-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #f3f4f6}
+  .doc-row:last-child{border-bottom:none}
+  .doc-name{font-weight:500}
+  .doc-meta{font-size:11px;color:var(--muted);margin-top:2px}
+  .badge-ia{font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600}
+  .badge-ia.aprovado{background:#dcfce7;color:#166534}
+  .badge-ia.duvida{background:#fef3c7;color:#92400e}
+  .badge-ia.recusado{background:#fee2e2;color:#991b1b}
+  .badge-ia.pendente{background:#e5e7eb;color:#4b5563}
+
+  .small-actions{display:flex;gap:4px}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="logo">
+      <div class="logo-name">BRANDÃO<span>&MARMO</span></div>
+      <div class="logo-sub">ENGENHARIA E CONSTRUÇÕES</div>
+    </div>
+    <div style="text-align:center;color:var(--muted);margin-bottom:20px;font-size:13px">Sistema SESMT — Controle de Documentação</div>
+    <div class="form-group">
+      <label>E-mail</label>
+      <input id="loginUser" type="email" placeholder="seu@email.com">
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input id="loginPass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Entrar</button>
+    <div class="login-hint">
+      <b>Primeiro acesso (Diretoria):</b><br>
+      <code>diretoria@brandaoemarmo.com.br</code> / <code>admin</code><br>
+      <span style="color:var(--crit)">⚠ Altere a senha em Usuários após o primeiro login</span>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appScreen">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo"><div class="logo-name">B&M <span style="font-size:13px;font-weight:400;color:var(--muted)">| SESMT</span></div></div>
+    </div>
+    <div class="user-info">
+      <span><b id="topUser">—</b> <span class="badge-role sesmt" id="topRole">SESMT</span></span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main" id="main"></div>
+  </div>
+  <div class="footer" id="footer">
+    <div id="footerLogo"></div>
+    <div>SESMT • Controle de Documentação • <span id="footerYear"></span></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal">
+  <div class="modal" id="modalEl">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Título</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<script>
+/* ===== CONSTANTES ===== */
+const STORAGE_KEY = 'sesmt_bm_data_v7';
+const ROLES = {
+  diretoria:{label:'DIRETORIA',badge:'sesmt'},
+  sesmt:{label:'SESMT',badge:'sesmt'},
+  coordenador:{label:'COORDENADOR',badge:'coordenador'},
+  engenheiro:{label:'ENGENHEIRO',badge:'engenheiro'},
+  tst:{label:'TST',badge:'engenheiro'},
+  cliente:{label:'CLIENTE',badge:'visualizador'},
+  visualizador:{label:'VISUALIZADOR',badge:'visualizador'},
+  empresa:{label:'EMPRESA',badge:'empresa'}
+};
+
+let DB = null;
+let session = null;
+let currentPage = 'dashboard';
+let filtros = {obraId:'',empresaId:'',status:'',busca:''};
+
+/* ===== STORAGE ===== */
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
+function load(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(raw){ try{DB = JSON.parse(raw);}catch(e){seed();} }
+  else seed();
+}
+function uid(){ return Date.now()+Math.floor(Math.random()*10000); }
+function hoje(){ return new Date().toISOString().slice(0,10); }
+function plusDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+
+function seed(){
+  DB = {
+    usuarios:[
+      {id:1, email:'diretoria@brandaoemarmo.com.br', senha:'admin', nome:'Diretoria B&M', tipo:'diretoria', empresaId:null, obraIds:[], naoApagar:true}
+    ],
+    catalogoDocs:[
+      // EMPRESA
+      {id:'cnpj', nome:'Cartão CNPJ', categoria:'empresa', validadeDias:90, descricao:'Cartão CNPJ atualizado',
+       checklistIA:'Confirme que é um Cartão CNPJ da Receita Federal, com CNPJ, razão social, situação cadastral ATIVA e data de emissão de no máximo 90 dias.'},
+      {id:'contrato_social', nome:'Contrato Social', categoria:'empresa', validadeDias:null, descricao:'Última alteração contratual',
+       checklistIA:'Confirme que é um Contrato Social (ou última alteração), com CNPJ, razão social, sócios identificados e registro na Junta Comercial.'},
+      {id:'contrato_terceiro', nome:'Contrato de Terceirização', categoria:'empresa', validadeDias:null, descricao:'Contrato que vincule terceirizadas',
+       checklistIA:'Confirme que é um contrato vinculando duas empresas (contratante e terceirizada), com objeto, prazo e assinaturas.'},
+      // FUNCIONÁRIO - RH
+      {id:'cpf', nome:'CPF', categoria:'funcionario', validadeDias:null, descricao:'Cópia simples',
+       checklistIA:'Confirme que é cópia de CPF legível, com nome e número do CPF visíveis.'},
+      {id:'rg', nome:'RG ou CNH válida', categoria:'funcionario', validadeDias:null, descricao:'Cópia simples',
+       checklistIA:'Confirme que é cópia de RG ou CNH. Se CNH, verificar se está dentro da validade.'},
+      {id:'foto', nome:'Foto 3x4', categoria:'funcionario', validadeDias:null, descricao:'',
+       checklistIA:'Confirme que contém foto 3x4 do colaborador, legível, recente.'},
+      {id:'ficha_registro', nome:'Ficha de Registro do Funcionário', categoria:'funcionario', validadeDias:null, descricao:'',
+       checklistIA:'Confirme que é Ficha de Registro de Empregado com nome, CPF, data de admissão, função, salário e dados da empresa empregadora.'},
+      {id:'ctps', nome:'CTPS', categoria:'funcionario', validadeDias:null, descricao:'Frente, verso e página de registro',
+       checklistIA:'Confirme que contém cópia da CTPS com frente, verso e página de registro empregatício (com dados do empregador atual carimbados/registrados).'},
+      // FUNCIONÁRIO - SST
+      {id:'aso', nome:'ASO - Atestado de Saúde Ocupacional', categoria:'funcionario', validadeDias:365, descricao:'Da clínica do PCMSO ou credenciada',
+       checklistIA:'Confirme que é um ASO (Atestado de Saúde Ocupacional). Deve conter: nome do colaborador, função/cargo, tipo de exame (admissional/periódico/demissional/mudança de função/retorno), riscos ocupacionais avaliados, data do exame, indicação clara APTO ou INAPTO, nome do médico examinador com CRM e assinatura. Validade máxima 1 ano.'},
+      {id:'nr01_os', nome:'NR-01 Ordem de Serviço (OS)', categoria:'funcionario', validadeDias:730, descricao:'Ordem de serviço assinada',
+       checklistIA:'Confirme que é uma Ordem de Serviço (OS) conforme NR-01, listando atividades, riscos da função, EPIs obrigatórios e medidas de prevenção. Deve estar assinada pelo colaborador.'},
+      {id:'nr06_epi', nome:'NR-06 Ficha de Entrega de EPI', categoria:'funcionario', validadeDias:180, descricao:'Assinada e atualizada',
+       checklistIA:'Confirme que é Ficha de Entrega de EPI com: nome do colaborador, lista de EPIs entregues, número do CA (Certificado de Aprovação) de cada EPI, datas de entrega e assinaturas do colaborador. Aceitável se atualizada nos últimos 180 dias.'},
+      {id:'nr18', nome:'NR-18 Treinamento Admissional', categoria:'funcionario', validadeDias:730, descricao:'',
+       checklistIA:'Confirme que é Certificado de Treinamento Admissional da NR-18 (Indústria da Construção), com carga horária mínima de 8h, nome do colaborador, data, conteúdo programático e instrutor responsável.'},
+      {id:'pcmso', nome:'PCMSO', categoria:'funcionario', validadeDias:365, descricao:'Assinado pelo Médico Coordenador',
+       checklistIA:'Confirme que é um PCMSO (Programa de Controle Médico de Saúde Ocupacional) elaborado e ASSINADO pelo Médico Coordenador (deve ter nome e CRM). Deve listar funções, riscos e exames previstos. Validade típica 1 ano.'},
+      {id:'apr', nome:'APR - Análise Preliminar do Risco', categoria:'funcionario', validadeDias:90, descricao:'',
+       checklistIA:'Confirme que é uma APR (Análise Preliminar de Risco) descrevendo a atividade, riscos identificados, medidas de controle, EPIs e assinatura dos envolvidos. Deve estar atualizada (recente).'},
+      {id:'pgr', nome:'PGR - Programa de Gerenciamento de Riscos', categoria:'funcionario', validadeDias:365, descricao:'',
+       checklistIA:'Confirme que é um PGR (NR-01 atualizada) com inventário de riscos, plano de ação, responsável técnico (com qualificação e registro profissional). Validade típica 1 ano.'},
+      {id:'ppr', nome:'PPR - Programa de Proteção Respiratória', categoria:'funcionario', validadeDias:365, descricao:'Quando há proteção respiratória',
+       checklistIA:'Confirme que é um PPR (Programa de Proteção Respiratória) com avaliação de exposição, seleção de respiradores adequados, treinamento e responsável técnico.'},
+      {id:'vacinacao', nome:'Carteira de Vacinação', categoria:'funcionario', validadeDias:365, descricao:'Doses atualizadas + COVID',
+       checklistIA:'Confirme que é carteira de vacinação (física ou digital ConecteSUS) com nome do colaborador e doses recentes. Verifique presença de COVID-19, Tétano, Hepatite B e Febre Amarela.'},
+      // NRs por função
+      {id:'nr10', nome:'NR-10 Segurança em Eletricidade', categoria:'funcionario', validadeDias:730, descricao:'',
+       checklistIA:'Certificado de Treinamento NR-10 (Básico 40h ou SEP 40h+40h). Conferir: nome do colaborador, carga horária, data, conteúdo programático, instrutor com qualificação técnica em eletricidade. Reciclagem bienal.'},
+      {id:'nr11', nome:'NR-11 Operador de Veículos Industriais', categoria:'funcionario', validadeDias:365, descricao:'',
+       checklistIA:'Certificado NR-11 (empilhadeira/transpaleteira/guindaste etc.). Deve indicar tipo do equipamento, carga horária mínima 16h, nome do colaborador, prática supervisionada. Reciclagem anual.'},
+      {id:'nr12', nome:'NR-12 Máquinas e Equipamentos', categoria:'funcionario', validadeDias:730, descricao:'',
+       checklistIA:'Certificado NR-12 com carga horária compatível (mín 8h), conteúdo sobre segurança em máquinas, nome do operador e máquina específica quando aplicável.'},
+      {id:'nr33', nome:'NR-33 Trabalho em Espaço Confinado', categoria:'funcionario', validadeDias:365, descricao:'',
+       checklistIA:'Certificado NR-33. Função do colaborador deve estar especificada (Trabalhador Autorizado, Vigia ou Supervisor de Entrada). Carga horária mín 16h (trabalhador/vigia) ou 40h (supervisor). Reciclagem anual.'},
+      {id:'nr34', nome:'NR-34 Soldador / Trabalho com Soldas', categoria:'funcionario', validadeDias:730, descricao:'',
+       checklistIA:'Certificado NR-34 (Indústria Naval/construção pesada) ou Treinamento de Soldador com qualificação. Carga horária mínima 8h. Conteúdo: riscos de soldagem, EPIs, espaço confinado se aplicável.'},
+      {id:'nr35', nome:'NR-35 Trabalho em Altura', categoria:'funcionario', validadeDias:730, descricao:'',
+       checklistIA:'Certificado NR-35 (Trabalho em Altura - acima de 2m). Conferir: nome do colaborador, carga horária mín 8h (inicial) ou 4h (reciclagem bienal), instrutor capacitado, conteúdo programático com resgate em altura.'},
+      // MÁQUINA
+      {id:'laudo_art', nome:'Laudo de Conformidade com nº ART', categoria:'maquina', validadeDias:365, descricao:'',
+       checklistIA:'Confirme Laudo de Conformidade NR-12 emitido por engenheiro habilitado, com número de ART do CREA citado no laudo, descrição da máquina, conclusão sobre conformidade.'},
+      {id:'art', nome:'ART', categoria:'maquina', validadeDias:365, descricao:'',
+       checklistIA:'Confirme Anotação de Responsabilidade Técnica do CREA, com número de ART, nome do engenheiro responsável, registro CREA, objeto/atividade, data e valor da ART paga.'},
+      {id:'plano_manut', nome:'Plano de Manutenção', categoria:'maquina', validadeDias:365, descricao:'',
+       checklistIA:'Confirme Plano de Manutenção preventiva da máquina, com periodicidade, itens a inspecionar e responsável técnico.'},
+      {id:'manual_pt', nome:'Manual em Português', categoria:'maquina', validadeDias:null, descricao:'',
+       checklistIA:'Confirme que é o Manual de Operação/Instruções da máquina em PORTUGUÊS, com instruções de segurança, operação e manutenção.'},
+      {id:'checklist', nome:'Check-list', categoria:'maquina', validadeDias:30, descricao:'Inspeção periódica',
+       checklistIA:'Confirme que é um Check-list de inspeção do equipamento, com data recente, itens verificados, status de cada item e assinatura do operador/inspetor.'},
+      {id:'historico_manut', nome:'Histórico de Manutenção (último ano)', categoria:'maquina', validadeDias:365, descricao:'',
+       checklistIA:'Confirme Histórico de Manutenções realizadas nos últimos 12 meses, com datas, serviços executados e responsáveis.'}
+    ],
+    catalogoFuncoes:[
+      {id:uid(), nome:'Ajudante Geral', docsIds:['cpf','rg','foto','ficha_registro','ctps','aso','nr01_os','nr06_epi','nr18','vacinacao']},
+      {id:uid(), nome:'Pedreiro', docsIds:['cpf','rg','foto','ficha_registro','ctps','aso','nr01_os','nr06_epi','nr18','vacinacao']},
+      {id:uid(), nome:'Soldador', docsIds:['cpf','rg','foto','ficha_registro','ctps','aso','nr01_os','nr06_epi','nr18','vacinacao','nr34','nr35','ppr']},
+      {id:uid(), nome:'Eletricista', docsIds:['cpf','rg','foto','ficha_registro','ctps','aso','nr01_os','nr06_epi','nr18','vacinacao','nr10','nr35']},
+      {id:uid(), nome:'Operador de Empilhadeira', docsIds:['cpf','rg','foto','ficha_registro','ctps','aso','nr01_os','nr06_epi','nr18','vacinacao','nr11','nr12']},
+      {id:uid(), nome:'Trabalhador em Altura', docsIds:['cpf','rg','foto','ficha_registro','ctps','aso','nr01_os','nr06_epi','nr18','vacinacao','nr35']}
+    ],
+    empresas:[],
+    obras:[],
+    funcionarios:[],
+    maquinas:[],
+    documentos:[],
+    config:{
+      smtp:{host:'',porta:587,usuario:'',senha:'',remetente:'sesmt@brandaoemarmo.com.br'},
+      diasAvisoVencimento:30,
+      iaHabilitada:true,
+      geminiApiKey:'',
+      geminiModel:'gemini-2.0-flash',
+      logoData:'',
+      nomeEmpresa:'BRANDÃO & MARMO',
+      corPrimaria:'#1a3d7c',
+      corSecundaria:'#e8a23a',
+      webhookMake:''
+    },
+    logs:[]
+  };
+  save();
+}
+
+/* ===== LOGIN ===== */
+function doLogin(){
+  const e = document.getElementById('loginUser').value.trim().toLowerCase();
+  const p = document.getElementById('loginPass').value;
+  const u = DB.usuarios.find(x=>x.email.toLowerCase()===e && x.senha===p);
+  if(!u){ toast('E-mail ou senha inválidos','err'); return; }
+  session = u;
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appScreen').style.display='block';
+  // logo / nome no topbar
+  const logoEl = document.querySelector('.topbar .logo .logo-name');
+  if(DB.config.logoData){
+    logoEl.innerHTML = `<img src="${DB.config.logoData}" style="max-height:34px;vertical-align:middle"> <span style="font-size:13px;font-weight:400;color:var(--muted);margin-left:8px">| SESMT</span>`;
+  } else {
+    logoEl.innerHTML = `${DB.config.nomeEmpresa||'B&M'} <span style="font-size:13px;font-weight:400;color:var(--muted)">| SESMT</span>`;
+  }
+  aplicarTema();
+  // logo no rodapé
+  const fl = document.getElementById('footerLogo');
+  if(DB.config.logoData){
+    fl.innerHTML = `<img src="${DB.config.logoData}">`;
+  } else {
+    fl.innerHTML = `<b style="color:var(--bm-blue)">${DB.config.nomeEmpresa||'B&M'}</b>`;
+  }
+  document.getElementById('footerYear').textContent = new Date().getFullYear();
+  document.getElementById('topUser').textContent = u.nome;
+  const role = ROLES[u.tipo];
+  const rb = document.getElementById('topRole');
+  rb.textContent = role.label;
+  rb.className = 'badge-role '+role.badge;
+  filtros = {obraId:'',empresaId:'',status:'',busca:''};
+  renderSidebar();
+  go('dashboard');
+}
+function logout(){
+  session=null;
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('appScreen').style.display='none';
+  document.getElementById('loginUser').value=''; document.getElementById('loginPass').value='';
+}
+
+/* ===== PERMISSÕES ===== */
+function pode(acao){
+  if(!session) return false;
+  const t = session.tipo;
+  // ações: 'config_docs','config_obra','aprovar_doc','enviar_doc','ver_tudo','gerir_usuarios','notificar'
+  const p = {
+    diretoria:['*'],
+    sesmt:['*'],
+    coordenador:['ver_obra','enviar_doc','notificar'],
+    engenheiro:['ver_obra','enviar_doc','notificar'],
+    tst:['ver_obra','enviar_doc','notificar','aprovar_doc'],
+    cliente:['ver_obra'],
+    visualizador:['ver_obra'],
+    empresa:['enviar_doc','ver_propria']
+  };
+  return p[t].includes('*') || p[t].includes(acao);
+}
+
+function escopoObras(){
+  if(!session) return [];
+  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.obras;
+  if(session.tipo==='empresa'){
+    const emp = DB.empresas.find(e=>e.id===session.empresaId);
+    return DB.obras.filter(o=>(emp?.obraIds||[]).includes(o.id));
+  }
+  return DB.obras.filter(o=>session.obraIds.includes(o.id));
+}
+function escopoEmpresas(){
+  if(!session) return [];
+  if(session.tipo==='empresa') return DB.empresas.filter(e=>e.id===session.empresaId);
+  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.empresas;
+  // coord/eng: empresas que têm gente nas suas obras
+  const oids = session.obraIds;
+  const eids = new Set();
+  DB.funcionarios.filter(f=>oids.includes(f.obraId)).forEach(f=>eids.add(f.empresaId));
+  DB.maquinas.filter(m=>oids.includes(m.obraId)).forEach(m=>eids.add(m.empresaId));
+  return DB.empresas.filter(e=>eids.has(e.id));
+}
+function escopoFuncionarios(){
+  if(!session) return [];
+  if(session.tipo==='empresa') return DB.funcionarios.filter(f=>f.empresaId===session.empresaId);
+  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.funcionarios;
+  return DB.funcionarios.filter(f=>session.obraIds.includes(f.obraId));
+}
+function escopoMaquinas(){
+  if(!session) return [];
+  if(session.tipo==='empresa') return DB.maquinas.filter(m=>m.empresaId===session.empresaId);
+  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.maquinas;
+  return DB.maquinas.filter(m=>session.obraIds.includes(m.obraId));
+}
+
+/* ===== SIDEBAR ===== */
+function renderSidebar(){
+  const t = session.tipo;
+  let nav = [];
+  if(t==='empresa'){
+    nav = [
+      {id:'dashboard',icon:'📊',label:'Meu Painel'},
+      {id:'minha_empresa',icon:'🏢',label:'Dados da Empresa'},
+      {id:'funcionarios',icon:'👷',label:'Meus Colaboradores'},
+      {id:'maquinas',icon:'🚜',label:'Minhas Máquinas'}
+    ];
+  } else if(t==='sesmt' || t==='diretoria'){
+    nav = [
+      {sec:'OPERAÇÃO'},
+      {id:'dashboard',icon:'📊',label:'Dashboard'},
+      {id:'obras',icon:'🏗️',label:'Obras'},
+      {id:'empresas',icon:'🏢',label:'Empresas'},
+      {id:'funcionarios',icon:'👷',label:'Colaboradores'},
+      {id:'maquinas',icon:'🚜',label:'Máquinas'},
+      {id:'devolutiva',icon:'📋',label:'Devolutiva'},
+      {id:'downloads',icon:'⬇️',label:'Downloads'},
+      {id:'relatorios',icon:'📑',label:'Relatórios'},
+      {id:'notificacoes',icon:'✉️',label:'Notificações'},
+      {sec:'CONFIGURAÇÃO'},
+      {id:'catalogo_docs',icon:'📚',label:'Catálogo de Documentos'},
+      {id:'catalogo_funcoes',icon:'🧑‍🔧',label:'Funções'},
+      {id:'usuarios',icon:'🔐',label:'Usuários'},
+      {id:'config',icon:'⚙️',label:'Configurações'}
+    ];
+  } else {
+    nav = [
+      {id:'dashboard',icon:'📊',label:'Dashboard'},
+      {id:'obras',icon:'🏗️',label:'Obras'},
+      {id:'empresas',icon:'🏢',label:'Empresas'},
+      {id:'funcionarios',icon:'👷',label:'Colaboradores'},
+      {id:'maquinas',icon:'🚜',label:'Máquinas'},
+      {id:'devolutiva',icon:'📋',label:'Devolutiva'},
+      {id:'downloads',icon:'⬇️',label:'Downloads'},
+      {id:'relatorios',icon:'📑',label:'Relatórios'}
+    ];
+    if(t!=='visualizador') nav.push({id:'notificacoes',icon:'✉️',label:'Notificações'});
+  }
+  document.getElementById('sidebar').innerHTML = nav.map(n=>
+    n.sec ? `<div class="nav-section">${n.sec}</div>`
+          : `<div class="nav-item ${currentPage===n.id?'active':''}" onclick="go('${n.id}')"><span class="nav-icon">${n.icon}</span>${n.label}</div>`
+  ).join('');
+}
+
+function go(page){
+  if(currentPage !== page) filtros = {obraId:'',empresaId:'',status:'',busca:''};
+  currentPage = page;
+  renderSidebar();
+  const fn = ({
+    dashboard:renderDashboard, obras:renderObras, empresas:renderEmpresas, minha_empresa:renderMinhaEmpresa,
+    funcionarios:renderFuncionarios, maquinas:renderMaquinas, relatorios:renderRelatorios,
+    notificacoes:renderNotificacoes, catalogo_docs:renderCatalogoDocs, catalogo_funcoes:renderCatalogoFuncoes,
+    usuarios:renderUsuarios, config:renderConfig, devolutiva:renderDevolutiva, downloads:renderDownloads
+  })[page];
+  if(fn) fn();
+}
+
+/* ===== DOCS EXIGIDOS / STATUS ===== */
+function docsExigidosEmpresa(empresa, obraId){
+  // união de todas as obras onde a empresa atua (ou apenas a obra filtrada)
+  const obras = obraId ? DB.obras.filter(o=>o.id===obraId) : DB.obras.filter(o=>{
+    return DB.funcionarios.some(f=>f.empresaId===empresa.id && f.obraId===o.id) ||
+           DB.maquinas.some(m=>m.empresaId===empresa.id && m.obraId===o.id);
+  });
+  const ids = new Set();
+  obras.forEach(o=>(o.docsEmpresa||[]).forEach(d=>ids.add(d)));
+  return [...ids].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+}
+function docsExigidosFuncionario(func){
+  const obra = DB.obras.find(o=>o.id===func.obraId);
+  const funcao = DB.catalogoFuncoes.find(f=>f.id==func.funcaoId);
+  const ids = new Set([...(obra?.docsFuncionarioBase||[]), ...(funcao?.docsIds||[])]);
+  return [...ids].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+}
+function docsExigidosMaquina(maq){
+  const obra = DB.obras.find(o=>o.id===maq.obraId);
+  return (obra?.docsMaquina||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+}
+
+function getDoc(tipo, refId, docId, obraId){
+  return DB.documentos.find(d=>d.refTipo===tipo && d.refId===refId && d.docId===docId && (tipo!=='empresa' || (d.obraId||null)===(obraId||null)));
+}
+
+function statusDoc(doc, exigencia){
+  if(!doc) return {label:'NÃO ENVIADO', cls:'pendente', dias:null};
+  // status sesmt manda
+  if(doc.sesmtStatus==='recusado') return {label:'RECUSADO', cls:'crit'};
+  if(doc.sesmtStatus==='pendente') return {label:'AGUARDANDO SESMT', cls:'info'};
+  // sesmt aprovado: verifica validade
+  if(exigencia && exigencia.validadeDias && doc.validade){
+    const dias = Math.floor((new Date(doc.validade)-new Date())/86400000);
+    if(dias<0) return {label:'VENCIDO', cls:'crit', dias};
+    if(dias<=DB.config.diasAvisoVencimento) return {label:`Vence em ${dias}d`, cls:'warn', dias};
+  }
+  return {label:'EM DIA', cls:'ok'};
+}
+
+function calcStatus(tipo, ref){
+  let ok=0,warn=0,crit=0,pend=0,aguard=0,total=0;
+  function bump(s){ total++; if(s.cls==='ok')ok++; else if(s.cls==='warn')warn++; else if(s.cls==='crit')crit++; else if(s.cls==='info')aguard++; else pend++; }
+  if(tipo==='empresa'){
+    (ref.obraIds||[]).forEach(oid=>{
+      const obra = DB.obras.find(o=>o.id===oid);
+      (obra?.docsEmpresa||[]).forEach(did=>{
+        const ex = DB.catalogoDocs.find(c=>c.id===did); if(!ex) return;
+        bump(statusDoc(getDoc('empresa',ref.id,did,oid), ex));
+      });
+    });
+  } else {
+    const exigidos = tipo==='funcionario'?docsExigidosFuncionario(ref) : docsExigidosMaquina(ref);
+    exigidos.forEach(e=>bump(statusDoc(getDoc(tipo, ref.id, e.id), e)));
+  }
+  return {total, ok, warn, crit, pend, aguard};
+}
+
+/* ===== IA ===== */
+function simularIA(){
+  const r = Math.random();
+  if(r<0.7) return {iaStatus:'aprovado', iaNota:'(Simulado) Documento parece OK.'};
+  if(r<0.9) return {iaStatus:'duvida', iaNota:'(Simulado) Revisão recomendada.'};
+  return {iaStatus:'recusado', iaNota:'(Simulado) Ilegível.'};
+}
+
+function fileToBase64(file){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = ()=>res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function analisarComGemini(file, docExigido, contexto){
+  const apiKey = DB.config.geminiApiKey;
+  if(!apiKey) return simularIA();
+  if(!file) return {iaStatus:'pendente', iaNota:'Sem arquivo para analisar.'};
+
+  const checklist = docExigido.checklistIA || docExigido.descricao || '';
+  let prompt = `Você é analista RIGOROSO do SESMT (Saúde e Segurança do Trabalho) de uma construtora brasileira. Analise o PDF anexado, enviado como sendo o documento obrigatório: "${docExigido.nome}".
+
+═══════════════════════════════════════════
+DADOS CADASTRADOS NO SISTEMA (use OBRIGATORIAMENTE para validar identidade):
+${contexto}
+═══════════════════════════════════════════
+
+⚠️ REGRAS CRÍTICAS DE IDENTIDADE — REJEIÇÃO AUTOMÁTICA:
+
+1. NOME do colaborador/empresa no PDF DEVE ser idêntico (ou variação clara) ao cadastro. Se for OUTRA pessoa/empresa → STATUS "recusado".
+2. CPF/CNPJ no PDF DEVE bater com o cadastrado. Se diferente → STATUS "recusado".
+3. Se você não consegue ler nome ou CPF/CNPJ no PDF → STATUS "duvida" (revisão manual).
+4. Para documentos vinculados a função (NRs, ASO): a função/cargo no PDF deve ser compatível com a cadastrada.
+
+VALIDAÇÕES GERAIS DO DOCUMENTO:
+- O PDF é REALMENTE do tipo "${docExigido.nome}"? Se for outro tipo de documento → "recusado".
+- Está legível e completo, sem cortes/borrões importantes?
+- Datas de emissão e validade estão visíveis?
+
+${checklist ? '═══════════════════════════════════════════\nCHECKLIST ESPECÍFICO DA B&M (siga rigorosamente):\n'+checklist+'\n═══════════════════════════════════════════\n' : ''}
+INSTRUÇÕES DE CLASSIFICAÇÃO:
+• "aprovado": IDENTIDADE bate + tipo correto + todos itens do checklist OK.
+• "duvida": identidade OK e tipo OK, mas qualidade ruim/algum item faltando que precisa revisão humana.
+• "recusado": identidade NÃO bate, OU tipo de documento errado, OU ilegível, OU falta item crítico.
+
+⚠️ NA NOTA, SEJA EXTREMAMENTE DETALHADO (até 2000 caracteres):
+1. NOMES E DOCUMENTOS QUE VOCÊ LEU NO PDF: cite literalmente o nome do colaborador/empresa, CPF/CNPJ, função, datas, CRM do médico, número de ART, carga horária, etc. — tudo que você conseguir extrair.
+2. COMPARAÇÃO com o cadastro: diga explicitamente se nome/CPF/CNPJ do PDF bate ou não com o cadastrado.
+3. CHECKLIST: liste cada item do checklist e diga se foi atendido ou não.
+4. PROBLEMAS encontrados: cada problema em uma frase.
+5. Se "recusado", explique EXATAMENTE o que precisa ser corrigido para reenvio.
+
+RESPONDA APENAS UM JSON PURO, SEM markdown, SEM \`\`\`, formato exato:
+{"status":"aprovado","nota":"texto detalhado aqui, com quebras de linha usando \\n"}`;
+
+  try{
+    const base64 = await fileToBase64(file);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${DB.config.geminiModel||'gemini-2.0-flash'}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        contents:[{parts:[
+          {inline_data:{mime_type:'application/pdf',data:base64}},
+          {text:prompt}
+        ]}],
+        generationConfig:{temperature:0.05, maxOutputTokens:2000}
+      })
+    });
+    if(!res.ok){
+      const err = await res.text();
+      return {iaStatus:'pendente', iaNota:`Erro Gemini ${res.status}: ${err.slice(0,150)}`};
+    }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const cleaned = text.replace(/```json|```/g,'').trim();
+    let parsed;
+    try{ parsed = JSON.parse(cleaned); }
+    catch(e){
+      // tentar achar JSON no texto
+      const m = cleaned.match(/\{[\s\S]*\}/);
+      if(m) parsed = JSON.parse(m[0]);
+      else return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato: '+cleaned.slice(0,150)};
+    }
+    const status = ['aprovado','duvida','recusado'].includes(parsed.status) ? parsed.status : 'pendente';
+    return {iaStatus:status, iaNota:String(parsed.nota||'')};
+  } catch(e){
+    return {iaStatus:'pendente', iaNota:'Falha ao chamar Gemini: '+e.message};
+  }
+}
+
+/* ===== DASHBOARD ===== */
+function renderDashboard(){
+  let emps = escopoEmpresas(), funcs = escopoFuncionarios(), maqs = escopoMaquinas();
+  if(filtros.obraId){
+    const oid = parseInt(filtros.obraId);
+    funcs = funcs.filter(f=>f.obraId===oid);
+    maqs = maqs.filter(m=>m.obraId===oid);
+    const eids = new Set([...funcs.map(f=>f.empresaId),...maqs.map(m=>m.empresaId)]);
+    emps = emps.filter(e=>eids.has(e.id));
+  }
+  if(filtros.empresaId){
+    const eid = parseInt(filtros.empresaId);
+    emps = emps.filter(e=>e.id===eid);
+    funcs = funcs.filter(f=>f.empresaId===eid);
+    maqs = maqs.filter(m=>m.empresaId===eid);
+  }
+  let totalDocs=0,vencidos=0,vencendo=0,pendentes=0,conformes=0,aguardando=0;
+  emps.forEach(e=>{const s=calcStatus('empresa',e); totalDocs+=s.total;vencidos+=s.crit;vencendo+=s.warn;pendentes+=s.pend;conformes+=s.ok;aguardando+=s.aguard;});
+  funcs.forEach(f=>{const s=calcStatus('funcionario',f); totalDocs+=s.total;vencidos+=s.crit;vencendo+=s.warn;pendentes+=s.pend;conformes+=s.ok;aguardando+=s.aguard;});
+  maqs.forEach(m=>{const s=calcStatus('maquina',m); totalDocs+=s.total;vencidos+=s.crit;vencendo+=s.warn;pendentes+=s.pend;conformes+=s.ok;aguardando+=s.aguard;});
+
+  // lista de pendências
+  const lista = [];
+  emps.forEach(e=>{
+    (e.obraIds||[]).forEach(oid=>{
+      const obra = DB.obras.find(o=>o.id===oid); if(!obra) return;
+      (obra.docsEmpresa||[]).forEach(did=>{
+        const ex = DB.catalogoDocs.find(c=>c.id===did); if(!ex) return;
+        const doc = getDoc('empresa',e.id,did,oid);
+        const s = statusDoc(doc,ex);
+        if(s.cls!=='ok') lista.push({tipo:'empresa', ref:e, nomeRef:e.razao, ctx:`${e.cnpj} • ${obra.nome}`, doc:ex, status:s, docObj:doc});
+      });
+    });
+  });
+  funcs.forEach(f=>{
+    const emp = DB.empresas.find(x=>x.id===f.empresaId);
+    const obra = DB.obras.find(x=>x.id===f.obraId);
+    docsExigidosFuncionario(f).forEach(ex=>{
+      const doc = getDoc('funcionario',f.id,ex.id);
+      const s = statusDoc(doc,ex);
+      if(s.cls!=='ok') lista.push({tipo:'funcionario', ref:f, nomeRef:f.nome, ctx:`${emp?.razao||''} • ${obra?.nome||''}`, doc:ex, status:s, docObj:doc});
+    });
+  });
+  maqs.forEach(m=>{
+    const emp = DB.empresas.find(x=>x.id===m.empresaId);
+    docsExigidosMaquina(m).forEach(ex=>{
+      const doc = getDoc('maquina',m.id,ex.id);
+      const s = statusDoc(doc,ex);
+      if(s.cls!=='ok') lista.push({tipo:'maquina', ref:m, nomeRef:m.descricao, ctx:emp?.razao||'', doc:ex, status:s, docObj:doc});
+    });
+  });
+  const ord = {crit:0, warn:1, info:2, pendente:3, ok:4};
+  lista.sort((a,b)=>ord[a.status.cls]-ord[b.status.cls]);
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Dashboard</div><div class="page-sub">Visão geral da conformidade documental</div></div>
+      ${pode('notificar')?`<button class="btn btn-primary" onclick="enviarNotificacoesEmLote()">✉️ Notificar todas as empresas com pendência</button>`:''}
+    </div>
+    ${toolbarFiltros({busca:false,obra:true,empresa:true})}
+    <div class="stats">
+      <div class="stat-card ok"><div class="stat-label">Em dia</div><div class="stat-value">${conformes}</div><div class="stat-sub">de ${totalDocs} documentos exigidos</div></div>
+      <div class="stat-card warn"><div class="stat-label">Vencendo</div><div class="stat-value">${vencendo}</div><div class="stat-sub">próximos ${DB.config.diasAvisoVencimento} dias</div></div>
+      <div class="stat-card crit"><div class="stat-label">Vencidos/Recusados</div><div class="stat-value">${vencidos}</div><div class="stat-sub">ação imediata</div></div>
+      <div class="stat-card"><div class="stat-label">Não enviados</div><div class="stat-value">${pendentes}</div></div>
+      <div class="stat-card" style="border-color:var(--info)"><div class="stat-label">Aguardando SESMT</div><div class="stat-value">${aguardando}</div><div class="stat-sub">análise pendente</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">⚠️ Pendências (${lista.length})</h3>
+      ${lista.length===0?'<div class="empty"><div class="empty-icon">✅</div>Tudo em dia!</div>':`
+      <table>
+        <thead><tr><th>Tipo</th><th>Item</th><th>Documento</th><th>Vínculo</th><th>IA</th><th>Status</th></tr></thead>
+        <tbody>${lista.slice(0,25).map(c=>`
+          <tr>
+            <td>${c.tipo==='empresa'?'🏢':c.tipo==='funcionario'?'👷':'🚜'}</td>
+            <td><b>${c.nomeRef}</b></td>
+            <td>${c.doc.nome}</td>
+            <td style="color:var(--muted);font-size:12px">${c.ctx||'-'}</td>
+            <td>${c.docObj?`<span class="badge-ia ${c.docObj.iaStatus}">${c.docObj.iaStatus}</span>`:'-'}</td>
+            <td><span class="status ${c.status.cls}">${c.status.label}</span></td>
+          </tr>`).join('')}</tbody>
+      </table>
+      ${lista.length>25?`<div style="text-align:center;margin-top:12px;color:var(--muted)">+ ${lista.length-25} pendências (ver Relatórios)</div>`:''}
+      `}
+    </div>
+  `;
+}
+
+/* ===== TOOLBAR DE FILTROS ===== */
+function toolbarFiltros(opts={}){
+  const obras = escopoObras();
+  const emps = escopoEmpresas();
+  const isEmpresa = session.tipo==='empresa';
+  let html = `<div class="toolbar">`;
+  if(opts.busca!==false) html += `<input id="ftBusca" placeholder="🔎 Buscar..." value="${filtros.busca||''}" oninput="filtros.busca=this.value;go('${currentPage}')">`;
+  if(opts.obra && obras.length>1){
+    html += `<select onchange="filtros.obraId=this.value;go('${currentPage}')">
+      <option value="">📍 Todas as obras</option>
+      ${obras.map(o=>`<option value="${o.id}" ${filtros.obraId==o.id?'selected':''}>${o.nome}</option>`).join('')}
+    </select>`;
+  }
+  if(opts.empresa && !isEmpresa && emps.length>1){
+    html += `<select onchange="filtros.empresaId=this.value;go('${currentPage}')">
+      <option value="">🏢 Todas as empresas</option>
+      ${emps.map(e=>`<option value="${e.id}" ${filtros.empresaId==e.id?'selected':''}>${e.razao}</option>`).join('')}
+    </select>`;
+  }
+  if(opts.status){
+    html += `<select onchange="filtros.status=this.value;go('${currentPage}')">
+      <option value="">Todos os status</option>
+      <option value="crit" ${filtros.status==='crit'?'selected':''}>Vencidos/Recusados</option>
+      <option value="warn" ${filtros.status==='warn'?'selected':''}>Vencendo</option>
+      <option value="info" ${filtros.status==='info'?'selected':''}>Aguardando SESMT</option>
+      <option value="pendente" ${filtros.status==='pendente'?'selected':''}>Não enviados</option>
+      <option value="ok" ${filtros.status==='ok'?'selected':''}>Em dia</option>
+    </select>`;
+  }
+  html += `<div class="toolbar-spacer"></div>`;
+  if(opts.actions) html += opts.actions;
+  if(filtros.obraId||filtros.empresaId||filtros.status||filtros.busca){
+    html += `<button class="btn btn-secondary btn-sm" onclick="filtros={obraId:'',empresaId:'',status:'',busca:''};go('${currentPage}')">✕ Limpar</button>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+/* ===== OBRAS ===== */
+function renderObras(){
+  const lista = escopoObras().filter(o=>!filtros.busca || o.nome.toLowerCase().includes(filtros.busca.toLowerCase()));
+  const canEdit = pode('*') || session.tipo==='sesmt';
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Obras</div><div class="page-sub">Documentações exigidas são definidas por obra</div></div>
+      ${canEdit?'<button class="btn btn-primary" onclick="editObra()">+ Nova Obra</button>':''}
+    </div>
+    ${toolbarFiltros({busca:true,obra:false,empresa:false})}
+    <div class="card">
+      <table>
+        <thead><tr><th>Nome</th><th>Endereço</th><th>Coordenador</th><th>Engenheiro</th><th>Colaboradores</th><th>Docs/Func</th><th>Status</th><th></th></tr></thead>
+        <tbody>${lista.map(o=>{
+          const c = DB.usuarios.find(u=>u.id===o.coordenadorId);
+          const e = DB.usuarios.find(u=>u.id===o.engenheiroId);
+          const cols = DB.funcionarios.filter(f=>f.obraId===o.id).length;
+          return `<tr>
+            <td><b>${o.nome}</b></td><td>${o.endereco}</td>
+            <td>${c?.nome||'-'}<div style="font-size:11px;color:var(--muted)">${c?.email||''}</div></td>
+            <td>${e?.nome||'-'}<div style="font-size:11px;color:var(--muted)">${e?.email||''}</div></td>
+            <td>${cols}</td>
+            <td>${(o.docsFuncionarioBase||[]).length} base</td>
+            <td><span class="status ${o.ativa?'ok':'pendente'}">${o.ativa?'Ativa':'Inativa'}</span></td>
+            <td>${canEdit?`<button class="btn btn-secondary btn-sm" onclick="editObra(${o.id})">Editar</button>`:''}</td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table>
+      ${lista.length===0?'<div class="empty"><div class="empty-icon">🏗️</div>Nenhuma obra</div>':''}
+    </div>
+  `;
+}
+function editObra(id){
+  const o = id ? DB.obras.find(x=>x.id===id) : {nome:'',endereco:'',ativa:true,coordenadorId:null,engenheiroId:null,tstId:null,clienteNome:'',destinatariosExtras:'',docsEmpresa:[],docsFuncionarioBase:[],docsMaquina:[]};
+  const coords = DB.usuarios.filter(u=>u.tipo==='coordenador');
+  const engs = DB.usuarios.filter(u=>u.tipo==='engenheiro');
+  const tsts = DB.usuarios.filter(u=>u.tipo==='tst');
+  showModal(id?'Editar Obra':'Nova Obra', `
+    <div class="form-group"><label>Nome da Obra</label><input id="f_nome" value="${o.nome}"></div>
+    <div class="form-group"><label>Endereço</label><input id="f_end" value="${o.endereco}"></div>
+    <div class="grid-3">
+      <div class="form-group"><label>Coordenador</label>
+        <select id="f_coord"><option value="">--</option>${coords.map(c=>`<option value="${c.id}" ${o.coordenadorId===c.id?'selected':''}>${c.nome}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Engenheiro Residente</label>
+        <select id="f_eng"><option value="">--</option>${engs.map(e=>`<option value="${e.id}" ${o.engenheiroId===e.id?'selected':''}>${e.nome}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>TST</label>
+        <select id="f_tst"><option value="">--</option>${tsts.map(t=>`<option value="${t.id}" ${o.tstId===t.id?'selected':''}>${t.nome}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group"><label>Cliente / Tomador da Obra (nome)</label><input id="f_cliente" value="${o.clienteNome||''}" placeholder="Ex: Hospital Municipal Nova HU"></div>
+    <div class="form-group">
+      <label>📨 Destinatários extras de e-mail (separados por vírgula ou ponto-vírgula)</label>
+      <textarea id="f_destext" rows="2" placeholder="cliente@empresa.com, gestor@empresa.com">${o.destinatariosExtras||''}</textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Coordenador, Engenheiro e TST cadastrados acima já recebem cópia automaticamente. Use este campo para clientes externos ou outros e-mails.</div>
+    </div>
+    <div class="form-group"><label><input type="checkbox" id="f_ativa" ${o.ativa?'checked':''} style="width:auto"> Obra ativa</label></div>
+
+    <h4 style="margin:18px 0 8px;color:var(--bm-blue)">📋 Documentos exigidos nesta obra</h4>
+    <div class="alert info" style="font-size:12px">Selecione abaixo quais documentos serão obrigatórios para empresas, todos os colaboradores (base) e máquinas atuando nesta obra. Por função do colaborador, exigências adicionais são definidas em <b>Funções</b>.</div>
+
+    <details open><summary><b>🏢 Documentos da Empresa</b> (${(o.docsEmpresa||[]).length} selecionados)</summary>
+      <div class="checkbox-list">${checkboxesDocs('empresa', o.docsEmpresa||[], 'f_docs_empresa')}</div>
+    </details>
+    <details><summary><b>👷 Documentos base de Colaborador</b> (${(o.docsFuncionarioBase||[]).length} selecionados)</summary>
+      <div class="checkbox-list">${checkboxesDocs('funcionario', o.docsFuncionarioBase||[], 'f_docs_func')}</div>
+    </details>
+    <details><summary><b>🚜 Documentos de Máquinas</b> (${(o.docsMaquina||[]).length} selecionados)</summary>
+      <div class="checkbox-list">${checkboxesDocs('maquina', o.docsMaquina||[], 'f_docs_maq')}</div>
+    </details>
+  `, ()=>{
+    const data = {
+      nome:val('f_nome'),endereco:val('f_end'),
+      coordenadorId:parseInt(val('f_coord'))||null, engenheiroId:parseInt(val('f_eng'))||null, tstId:parseInt(val('f_tst'))||null,
+      clienteNome:val('f_cliente'), destinatariosExtras:val('f_destext'),
+      ativa:document.getElementById('f_ativa').checked,
+      docsEmpresa: getChecked('f_docs_empresa'),
+      docsFuncionarioBase: getChecked('f_docs_func'),
+      docsMaquina: getChecked('f_docs_maq')
+    };
+    if(!data.nome){ toast('Nome obrigatório','err'); return false; }
+    if(id) Object.assign(o,data); else DB.obras.push({id:uid(),...data});
+    save(); go('obras'); toast('Obra salva'); return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{ if(confirm('Excluir obra?')){ DB.obras=DB.obras.filter(x=>x.id!==id); save(); go('obras'); closeModal(); }}}]:[], false, 'lg');
+}
+
+function checkboxesDocs(categoria, selecionados, name){
+  const docs = DB.catalogoDocs.filter(d=>d.categoria===categoria);
+  if(docs.length===0) return '<div class="empty">Nenhum documento no catálogo. Cadastre em Catálogo de Documentos.</div>';
+  return docs.map(d=>`<label><input type="checkbox" name="${name}" value="${d.id}" ${selecionados.includes(d.id)?'checked':''}><span><b>${d.nome}</b>${d.validadeDias?` <span style="color:var(--muted);font-size:11px">(${d.validadeDias}d)</span>`:''}${d.descricao?`<div style="font-size:11px;color:var(--muted)">${d.descricao}</div>`:''}</span></label>`).join('');
+}
+function getChecked(name){ return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(i=>i.value); }
+
+/* ===== EMPRESAS ===== */
+function renderEmpresas(){
+  const obrasAll = escopoObras();
+  let lista = escopoEmpresas();
+  if(filtros.obraId){
+    const oid = parseInt(filtros.obraId);
+    lista = lista.filter(e=>(e.obraIds||[]).includes(oid));
+  }
+  if(filtros.busca){
+    const q = filtros.busca.toLowerCase();
+    lista = lista.filter(e=>e.razao.toLowerCase().includes(q)||e.cnpj.includes(q));
+  }
+  const canEdit = session.tipo==='sesmt';
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Empresas Parceiras</div><div class="page-sub">Fornecedores que atuam nas obras</div></div>
+      ${canEdit?'<button class="btn btn-primary" onclick="editEmpresa()">+ Nova Empresa</button>':''}
+    </div>
+    ${toolbarFiltros({busca:true,obra:true})}
+    <div class="card">
+      <table>
+        <thead><tr><th>Razão Social</th><th>CNPJ</th><th>Obras</th><th>Contato</th><th>Colab.</th><th>Conformidade</th><th></th></tr></thead>
+        <tbody>${lista.map(e=>{
+          const cols = DB.funcionarios.filter(f=>f.empresaId===e.id && (!filtros.obraId||f.obraId==filtros.obraId)).length;
+          const obrasNomes = (e.obraIds||[]).map(oid=>DB.obras.find(o=>o.id===oid)?.nome).filter(Boolean);
+          const s = calcStatus('empresa',e);
+          const cls = s.crit>0?'crit':s.warn>0||s.pend>0||s.aguard>0?'warn':'ok';
+          return `<tr>
+            <td><b>${e.razao}</b><div style="font-size:11px;color:var(--muted)">${e.responsavel||''}</div></td>
+            <td>${e.cnpj}</td>
+            <td style="font-size:11px">${obrasNomes.map(n=>`<span class="pill">${n}</span>`).join('')||'<span style="color:var(--muted)">Nenhuma</span>'}</td>
+            <td style="font-size:12px">${e.email}<br>${e.telefone||''}</td>
+            <td>${cols}</td>
+            <td><span class="status ${cls}">${s.ok}/${s.total}</span></td>
+            <td class="small-actions">
+              <button class="btn btn-secondary btn-sm" onclick="verDocsRef('empresa',${e.id},'${esc(e.razao)}')">📄</button>
+              ${pode('notificar')?`<button class="btn btn-warn btn-sm" onclick="notificarEmpresa(${e.id})">✉️</button>`:''}
+              ${canEdit?`<button class="btn btn-secondary btn-sm" onclick="editEmpresa(${e.id})">Editar</button>`:''}
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      ${lista.length===0?'<div class="empty"><div class="empty-icon">🏢</div>Nenhuma empresa</div>':''}
+    </div>
+  `;
+}
+function editEmpresa(id){
+  const e = id ? DB.empresas.find(x=>x.id===id) : {cnpj:'',razao:'',email:'',responsavel:'',telefone:'',obraIds:[]};
+  const userExistente = id ? DB.usuarios.find(u=>u.tipo==='empresa'&&u.empresaId===id) : null;
+  const obrasAtivas = DB.obras.filter(o=>o.ativa);
+  showModal(id?'Editar Empresa':'Nova Empresa', `
+    <div class="grid-2">
+      <div class="form-group"><label>CNPJ</label><input id="f_cnpj" value="${e.cnpj}" placeholder="00.000.000/0001-00"></div>
+      <div class="form-group"><label>Razão Social</label><input id="f_razao" value="${e.razao}"></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label>Responsável</label><input id="f_resp" value="${e.responsavel||''}"></div>
+      <div class="form-group"><label>Telefone</label><input id="f_tel" value="${e.telefone||''}"></div>
+    </div>
+    <div class="form-group"><label>E-mail (login da empresa)</label><input id="f_email" type="email" value="${e.email}"></div>
+    <div class="form-group"><label>Senha de acesso ${id?'(deixe em branco para manter)':''}</label><input id="f_senha" type="password" placeholder="${id?'••••':'Senha inicial'}"></div>
+    <div class="form-group">
+      <label>🏗️ Obras onde esta empresa está atuando</label>
+      <div class="checkbox-list">
+        ${obrasAtivas.length===0?'<div class="empty" style="padding:14px">Cadastre obras primeiro</div>':obrasAtivas.map(o=>`<label><input type="checkbox" name="f_obras_emp" value="${o.id}" ${(e.obraIds||[]).includes(o.id)?'checked':''}><span><b>${o.nome}</b><div style="font-size:11px;color:var(--muted)">${o.endereco||''}</div></span></label>`).join('')}
+      </div>
+    </div>
+    <div class="alert info">A empresa fará login com o e-mail acima. Ela só poderá <b>enviar</b> documentos — quem define o que é exigido é o SESMT.</div>
+  `, ()=>{
+    const data = {cnpj:val('f_cnpj'),razao:val('f_razao'),responsavel:val('f_resp'),telefone:val('f_tel'),email:val('f_email'),obraIds:getChecked('f_obras_emp').map(x=>parseInt(x))};
+    const senha = val('f_senha');
+    if(!data.cnpj||!data.razao||!data.email){ toast('CNPJ, razão e e-mail obrigatórios','err'); return false; }
+    if(id){
+      Object.assign(e,data);
+      if(userExistente){
+        userExistente.email = data.email; userExistente.nome = data.razao;
+        if(senha) userExistente.senha = senha;
+      } else {
+        if(!senha){ toast('Defina uma senha','err'); return false; }
+        DB.usuarios.push({id:uid(),email:data.email,senha,nome:data.razao,tipo:'empresa',empresaId:id,obraIds:[]});
+      }
+    } else {
+      if(!senha){ toast('Senha obrigatória','err'); return false; }
+      const newId = uid();
+      DB.empresas.push({id:newId,...data,criadoEm:hoje()});
+      DB.usuarios.push({id:uid(),email:data.email,senha,nome:data.razao,tipo:'empresa',empresaId:newId,obraIds:[]});
+    }
+    save(); go('empresas'); toast('Empresa salva'); return true;
+  });
+}
+
+function renderMinhaEmpresa(){
+  const e = DB.empresas.find(x=>x.id===session.empresaId);
+  if(!e) return;
+  document.getElementById('main').innerHTML = `
+    <div class="page-header"><div><div class="page-title">Dados da Empresa</div><div class="page-sub">${e.razao}</div></div></div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">📋 Cadastro</h3>
+      <div class="grid-2">
+        <div><label>CNPJ</label><div style="padding:8px 0">${e.cnpj}</div></div>
+        <div><label>Razão Social</label><div style="padding:8px 0">${e.razao}</div></div>
+        <div><label>Responsável</label><div style="padding:8px 0">${e.responsavel||'-'}</div></div>
+        <div><label>E-mail</label><div style="padding:8px 0">${e.email}</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">📄 Documentos exigidos</h3>
+      ${renderDocsList('empresa', e)}
+    </div>
+  `;
+}
+
+/* ===== FUNCIONÁRIOS ===== */
+function renderFuncionarios(){
+  let lista = escopoFuncionarios();
+  if(filtros.obraId) lista = lista.filter(f=>f.obraId==filtros.obraId);
+  if(filtros.empresaId) lista = lista.filter(f=>f.empresaId==filtros.empresaId);
+  if(filtros.busca){
+    const q = filtros.busca.toLowerCase();
+    lista = lista.filter(f=>f.nome.toLowerCase().includes(q)||f.cpf.includes(q));
+  }
+  if(filtros.status){
+    lista = lista.filter(f=>{
+      const s = calcStatus('funcionario',f);
+      if(filtros.status==='ok') return s.crit===0&&s.warn===0&&s.pend===0&&s.aguard===0;
+      if(filtros.status==='crit') return s.crit>0;
+      if(filtros.status==='warn') return s.warn>0;
+      if(filtros.status==='pendente') return s.pend>0;
+      if(filtros.status==='info') return s.aguard>0;
+    });
+  }
+  const isAdmin = session.tipo==='sesmt';
+  const isEmpresa = session.tipo==='empresa';
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">${isEmpresa?'Meus Colaboradores':'Colaboradores'}</div><div class="page-sub">Cada função exige documentações específicas</div></div>
+      ${pode('enviar_doc')?'<button class="btn btn-primary" onclick="editFuncionario()">+ Novo Colaborador</button>':''}
+    </div>
+    ${toolbarFiltros({busca:true,obra:true,empresa:true,status:true})}
+    <div class="card">
+      <table>
+        <thead><tr><th>Nome</th><th>CPF</th><th>Função</th>${!isEmpresa?'<th>Empresa</th>':''}<th>Obra</th><th>Conformidade</th><th></th></tr></thead>
+        <tbody>${lista.map(f=>{
+          const emp = DB.empresas.find(x=>x.id===f.empresaId);
+          const obra = DB.obras.find(x=>x.id===f.obraId);
+          const funcao = DB.catalogoFuncoes.find(x=>x.id===f.funcaoId);
+          const s = calcStatus('funcionario',f);
+          const cls = s.crit>0?'crit':s.warn>0||s.pend>0||s.aguard>0?'warn':'ok';
+          return `<tr>
+            <td><b>${f.nome}</b></td><td>${f.cpf}</td><td>${funcao?.nome||'-'}</td>
+            ${!isEmpresa?`<td>${emp?.razao||'-'}</td>`:''}
+            <td>${obra?.nome||'-'}</td>
+            <td><span class="status ${cls}">${s.ok}/${s.total}</span></td>
+            <td class="small-actions">
+              <button class="btn btn-secondary btn-sm" onclick="verDocsRef('funcionario',${f.id},'${esc(f.nome)}')">📄</button>
+              ${pode('notificar')?`<button class="btn btn-warn btn-sm" title="Notificar pendências" onclick="notificarFuncionario(${f.id})">✉️</button>`:''}
+              ${pode('enviar_doc')?`<button class="btn btn-secondary btn-sm" onclick="editFuncionario(${f.id})">Editar</button>`:''}
+            </td>
+          </tr>`;}).join('')}</tbody>
+      </table>
+      ${lista.length===0?'<div class="empty"><div class="empty-icon">👷</div>Nenhum colaborador</div>':''}
+    </div>
+  `;
+}
+function editFuncionario(id){
+  const f = id ? DB.funcionarios.find(x=>x.id===id) : {nome:'',cpf:'',funcaoId:null,empresaId:session.tipo==='empresa'?session.empresaId:null,obraId:null,ativo:true};
+  const empresas = escopoEmpresas();
+  const obras = escopoObras();
+  showModal(id?'Editar Colaborador':'Novo Colaborador',`
+    <div class="grid-2">
+      <div class="form-group"><label>Nome</label><input id="f_nome" value="${f.nome}"></div>
+      <div class="form-group"><label>CPF</label><input id="f_cpf" value="${f.cpf}"></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label>Função</label>
+        <select id="f_funcao"><option value="">-- Selecione --</option>${DB.catalogoFuncoes.map(c=>`<option value="${c.id}" ${f.funcaoId===c.id?'selected':''}>${c.nome}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Empresa</label>
+        <select id="f_emp" ${session.tipo==='empresa'?'disabled':''}>${empresas.map(e=>`<option value="${e.id}" ${f.empresaId===e.id?'selected':''}>${e.razao}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group"><label>Obra</label>
+      <select id="f_obra"><option value="">--</option>${obras.filter(o=>o.ativa).map(o=>`<option value="${o.id}" ${f.obraId===o.id?'selected':''}>${o.nome}</option>`).join('')}</select>
+    </div>
+    <div class="alert info"><b>📋 Documentos exigidos = docs da OBRA + docs da FUNÇÃO</b><div id="previewDocs" style="margin-top:8px;font-size:12px">Selecione função e obra para ver a agregação.</div></div>
+    <script>(function(){
+      function atualizar(){
+        const fid=parseInt(document.getElementById('f_funcao')?.value)||null;
+        const oid=parseInt(document.getElementById('f_obra')?.value)||null;
+        const obra=DB.obras.find(o=>o.id===oid);
+        const funcao=DB.catalogoFuncoes.find(c=>c.id===fid);
+        const docsObra=new Set(obra?.docsFuncionarioBase||[]);
+        const docsFunc=new Set(funcao?.docsIds||[]);
+        const todos=new Set([...docsObra,...docsFunc]);
+        const docNomes=id=>DB.catalogoDocs.find(d=>d.id===id)?.nome||id;
+        const p=document.getElementById('previewDocs');
+        if(!p) return;
+        if(!fid||!oid){ p.innerHTML='Selecione função e obra para ver a agregação.'; return; }
+        p.innerHTML=`<b>${todos.size} documentos exigidos</b> (${docsObra.size} da obra + ${docsFunc.size} da função, com sobreposição):<div style="margin-top:6px">${[...todos].map(id=>{const obraT=docsObra.has(id),funcT=docsFunc.has(id);const tag=obraT&&funcT?'🏗️🧑‍🔧':obraT?'🏗️':'🧑‍🔧';return `<span class="pill" title="${obraT?'Obra ':''}${funcT?'Função':''}">${tag} ${docNomes(id)}</span>`;}).join('')}</div>`;
+      }
+      setTimeout(()=>{document.getElementById('f_funcao')?.addEventListener('change',atualizar);document.getElementById('f_obra')?.addEventListener('change',atualizar);atualizar();},50);
+    })();</script>
+  `, ()=>{
+    const data={nome:val('f_nome'),cpf:val('f_cpf'),funcaoId:parseInt(val('f_funcao'))||null,
+      empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true};
+    if(!data.nome||!data.cpf||!data.empresaId||!data.funcaoId){ toast('Preencha todos os campos','err'); return false; }
+    if(id) Object.assign(f,data); else DB.funcionarios.push({id:uid(),...data});
+    save(); go('funcionarios'); toast('Colaborador salvo'); return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{if(confirm('Excluir?')){DB.funcionarios=DB.funcionarios.filter(x=>x.id!==id);DB.documentos=DB.documentos.filter(d=>!(d.refTipo==='funcionario'&&d.refId===id));save();go('funcionarios');closeModal();}}}]:[]);
+}
+
+/* ===== MÁQUINAS ===== */
+function renderMaquinas(){
+  let lista = escopoMaquinas();
+  if(filtros.obraId) lista = lista.filter(m=>m.obraId==filtros.obraId);
+  if(filtros.empresaId) lista = lista.filter(m=>m.empresaId==filtros.empresaId);
+  if(filtros.busca){ const q=filtros.busca.toLowerCase(); lista = lista.filter(m=>m.descricao.toLowerCase().includes(q)); }
+  const isEmpresa = session.tipo==='empresa';
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">${isEmpresa?'Minhas Máquinas':'Máquinas'}</div><div class="page-sub">Equipamentos de grande porte</div></div>
+      ${pode('enviar_doc')?'<button class="btn btn-primary" onclick="editMaquina()">+ Nova Máquina</button>':''}
+    </div>
+    ${toolbarFiltros({busca:true,obra:true,empresa:true})}
+    <div class="card">
+      <table>
+        <thead><tr><th>Descrição</th><th>Patrimônio</th>${!isEmpresa?'<th>Empresa</th>':''}<th>Obra</th><th>Conformidade</th><th></th></tr></thead>
+        <tbody>${lista.map(m=>{
+          const emp = DB.empresas.find(x=>x.id===m.empresaId);
+          const obra = DB.obras.find(x=>x.id===m.obraId);
+          const s = calcStatus('maquina',m);
+          const cls = s.crit>0?'crit':s.warn>0||s.pend>0||s.aguard>0?'warn':'ok';
+          return `<tr>
+            <td><b>${m.descricao}</b></td><td>${m.patrimonio||'-'}</td>
+            ${!isEmpresa?`<td>${emp?.razao||'-'}</td>`:''}
+            <td>${obra?.nome||'-'}</td>
+            <td><span class="status ${cls}">${s.ok}/${s.total}</span></td>
+            <td class="small-actions">
+              <button class="btn btn-secondary btn-sm" onclick="verDocsRef('maquina',${m.id},'${esc(m.descricao)}')">📄</button>
+              ${pode('enviar_doc')?`<button class="btn btn-secondary btn-sm" onclick="editMaquina(${m.id})">Editar</button>`:''}
+            </td>
+          </tr>`;}).join('')}</tbody>
+      </table>
+      ${lista.length===0?'<div class="empty"><div class="empty-icon">🚜</div>Nenhuma máquina</div>':''}
+    </div>
+  `;
+}
+function editMaquina(id){
+  const m = id ? DB.maquinas.find(x=>x.id===id) : {descricao:'',patrimonio:'',empresaId:session.tipo==='empresa'?session.empresaId:null,obraId:null};
+  const empresas = escopoEmpresas(); const obras = escopoObras();
+  showModal(id?'Editar Máquina':'Nova Máquina', `
+    <div class="form-group"><label>Descrição</label><input id="f_desc" value="${m.descricao}"></div>
+    <div class="grid-2">
+      <div class="form-group"><label>Patrimônio/Série</label><input id="f_pat" value="${m.patrimonio||''}"></div>
+      <div class="form-group"><label>Empresa</label><select id="f_emp" ${session.tipo==='empresa'?'disabled':''}>${empresas.map(e=>`<option value="${e.id}" ${m.empresaId===e.id?'selected':''}>${e.razao}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-group"><label>Obra</label><select id="f_obra"><option value="">--</option>${obras.filter(o=>o.ativa).map(o=>`<option value="${o.id}" ${m.obraId===o.id?'selected':''}>${o.nome}</option>`).join('')}</select></div>
+  `, ()=>{
+    const data={descricao:val('f_desc'),patrimonio:val('f_pat'),empresaId:parseInt(val('f_emp'))||m.empresaId,obraId:parseInt(val('f_obra'))||null};
+    if(!data.descricao||!data.empresaId){ toast('Preencha','err'); return false; }
+    if(id) Object.assign(m,data); else DB.maquinas.push({id:uid(),...data});
+    save(); go('maquinas'); toast('Máquina salva'); return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{if(confirm('Excluir?')){DB.maquinas=DB.maquinas.filter(x=>x.id!==id);DB.documentos=DB.documentos.filter(d=>!(d.refTipo==='maquina'&&d.refId===id));save();go('maquinas');closeModal();}}}]:[]);
+}
+
+/* ===== LISTA DE DOCS DE UMA REFERÊNCIA ===== */
+function verDocsRef(tipo, refId, nome){
+  let ref;
+  if(tipo==='empresa') ref = DB.empresas.find(x=>x.id===refId);
+  else if(tipo==='funcionario') ref = DB.funcionarios.find(x=>x.id===refId);
+  else ref = DB.maquinas.find(x=>x.id===refId);
+  showModal(`Documentos: ${nome}`, renderDocsList(tipo, ref), null, [], true, 'lg');
+}
+function renderDocsList(tipo, ref){
+  if(tipo==='empresa'){
+    if(!(ref.obraIds||[]).length) return '<div class="empty">Empresa não está vinculada a nenhuma obra. Edite a empresa e marque as obras.</div>';
+    return ref.obraIds.map(oid=>{
+      const obra = DB.obras.find(o=>o.id===oid);
+      if(!obra) return '';
+      const exigidos = (obra.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+      if(exigidos.length===0) return `<div style="margin-bottom:18px"><h4 style="color:var(--bm-blue);padding:8px 12px;background:#eef2f9;border-radius:6px">🏗️ ${obra.nome}</h4><div class="empty" style="padding:14px;font-size:13px">Nenhum doc de empresa exigido nesta obra.</div></div>`;
+      return `<div style="margin-bottom:22px">
+        <h4 style="color:var(--bm-blue);padding:8px 12px;background:#eef2f9;border-radius:6px;margin-bottom:8px">🏗️ ${obra.nome}</h4>
+        ${exigidos.map(de=>renderDocRow(tipo, ref, de, oid)).join('')}
+      </div>`;
+    }).join('');
+  }
+  const exigidos = tipo==='funcionario'?docsExigidosFuncionario(ref) : docsExigidosMaquina(ref);
+  if(exigidos.length===0) return '<div class="empty">Nenhum documento exigido. Verifique configuração da obra.</div>';
+  return exigidos.map(de=>renderDocRow(tipo, ref, de, null)).join('');
+}
+
+function renderDocRow(tipo, ref, de, obraId){
+  const doc = getDoc(tipo, ref.id, de.id, obraId);
+  const s = statusDoc(doc, de);
+  const obraArg = obraId?`,${obraId}`:',null';
+  return `<div class="doc-row" ondragover="event.preventDefault();this.style.background='#dbeafe'" ondragleave="this.style.background=''" ondrop="dropOnRow(event,'${tipo}',${ref.id},'${de.id}','${esc(de.nome)}',${de.validadeDias||'null'}${obraArg})">
+    <div>
+      <div class="doc-name">${de.nome}</div>
+      <div class="doc-meta">
+        ${doc?`📎 ${doc.arquivo} • Emitido: ${doc.emitidoEm}${doc.validade?` • Validade: ${doc.validade}`:''}`:'<span style="color:var(--muted)">⤓ Arraste o PDF aqui ou clique em Enviar →</span>'}
+      </div>
+      ${doc && (doc.iaNota || doc.sesmtMotivo) ? `
+        <div style="margin-top:8px;padding:10px 12px;background:#f9fafb;border-left:3px solid ${doc.sesmtStatus==='recusado'?'var(--crit)':doc.iaStatus==='recusado'?'var(--crit)':doc.iaStatus==='duvida'?'var(--warn)':'var(--info)'};border-radius:4px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">
+          ${doc.iaNota?`<div><b>🤖 Análise da IA (${doc.iaStatus}):</b>\n${escapeHtml(doc.iaNota)}</div>`:''}
+          ${doc.sesmtMotivo?`<div style="color:var(--crit);margin-top:8px;padding-top:8px;border-top:1px solid #fecaca"><b>✗ Motivo da recusa SESMT:</b>\n${escapeHtml(doc.sesmtMotivo)}</div>`:''}
+        </div>` : ''}
+    </div>
+    <span class="status ${s.cls}">${s.label}</span>
+    <div class="small-actions">
+      ${doc && doc.arquivoData ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
+      ${doc && pode('aprovar_doc') && doc.sesmtStatus==='pendente' ? `
+        <button class="btn btn-success btn-sm" title="Aprovar" onclick="aprovarDoc(${doc.id})">✓</button>
+        <button class="btn btn-danger btn-sm" title="Recusar" onclick="recusarDoc(${doc.id})">✗</button>` : ''}
+      ${doc && pode('enviar_doc') ? `<button class="btn btn-danger btn-sm" title="Excluir e reenviar" onclick="excluirDoc(${doc.id})">🗑</button>`:''}
+    </div>
+    ${pode('enviar_doc')?`<button class="btn btn-primary btn-sm" onclick="uploadDoc('${tipo}',${ref.id},'${de.id}','${esc(de.nome)}',${de.validadeDias||'null'}${obraArg})">📎 ${doc?'Atualizar':'Enviar'}</button>`:'<div></div>'}
+  </div>`;
+}
+
+function dropOnRow(e,tipo,refId,docId,docNome,validadeDias,obraId){
+  e.preventDefault(); e.currentTarget.style.background='';
+  const f = e.dataTransfer?.files?.[0];
+  if(!f){ return; }
+  if(f.type!=='application/pdf'){ toast('Apenas PDF','err'); return; }
+  uploadDoc(tipo,refId,docId,docNome,validadeDias,obraId);
+  setTimeout(()=>{
+    const arq = document.getElementById('f_arq');
+    if(arq){
+      const dt = new DataTransfer(); dt.items.add(f);
+      arq.files = dt.files;
+      atualizarDropLabel(arq);
+    }
+  }, 120);
+}
+
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
+  obraId = obraId||null;
+  const existing = getDoc(tipo, refId, docId, obraId);
+  const emitido = existing?.emitidoEm || hoje();
+  const validade = validadeDias ? plusDays(validadeDias) : '';
+  const docExigido = DB.catalogoDocs.find(d=>d.id===docId);
+  let contexto = '';
+  if(tipo==='funcionario'){
+    const f = DB.funcionarios.find(x=>x.id===refId);
+    const funcao = DB.catalogoFuncoes.find(c=>c.id===f?.funcaoId);
+    const obra = DB.obras.find(o=>o.id===f?.obraId);
+    const emp = DB.empresas.find(e=>e.id===f?.empresaId);
+    contexto = `• COLABORADOR: ${f?.nome}\n• CPF: ${f?.cpf}\n• FUNÇÃO: ${funcao?.nome||''}\n• EMPRESA EMPREGADORA: ${emp?.razao||''} (CNPJ ${emp?.cnpj||''})\n• OBRA: ${obra?.nome||''}`;
+  } else if(tipo==='empresa'){
+    const e = DB.empresas.find(x=>x.id===refId);
+    const obra = obraId ? DB.obras.find(o=>o.id===obraId) : null;
+    contexto = `• EMPRESA: ${e?.razao}\n• CNPJ: ${e?.cnpj}\n• RESPONSÁVEL: ${e?.responsavel||'-'}${obra?`\n• OBRA: ${obra.nome}`:''}`;
+  } else if(tipo==='maquina'){
+    const m = DB.maquinas.find(x=>x.id===refId);
+    const emp = DB.empresas.find(e=>e.id===m?.empresaId);
+    const obra = DB.obras.find(o=>o.id===m?.obraId);
+    contexto = `• MÁQUINA: ${m?.descricao}\n• PATRIMÔNIO/SÉRIE: ${m?.patrimonio||'-'}\n• EMPRESA: ${emp?.razao||''}\n• OBRA: ${obra?.nome||''}`;
+  }
+  const temGemini = !!DB.config.geminiApiKey;
+  showModal(`Enviar: ${docNome}`, `
+    <div class="form-group">
+      <label>Arquivo PDF</label>
+      <div id="dropZone" style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;background:#f9fafb;cursor:pointer;transition:all .15s" onclick="document.getElementById('f_arq').click()">
+        <div style="font-size:30px;margin-bottom:4px">📎</div>
+        <div id="dropLabel" style="color:var(--muted);font-size:13px"><b>Clique</b> ou <b>arraste o PDF</b> aqui</div>
+      </div>
+      <input id="f_arq" type="file" accept=".pdf" style="display:none" onchange="atualizarDropLabel(this)">
+    </div>
+    <div class="alert ${temGemini?'success':'info'}">
+      ${temGemini ? '🤖 <b>Análise por IA ativa</b> — Gemini vai ler o PDF e validar automaticamente.' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label>Data de Emissão</label><input id="f_emit" type="date" value="${emitido}"></div>
+      ${validadeDias?`<div class="form-group"><label>Validade</label><input id="f_val" type="date" value="${validade}"></div>`:''}
+    </div>
+    <div id="iaLoading" style="display:none;text-align:center;padding:20px;background:#dbeafe;border-radius:8px;margin-top:12px">
+      <div style="font-size:18px;margin-bottom:6px">🤖 Analisando documento com Gemini...</div>
+      <div style="font-size:12px;color:var(--muted)">Pode levar alguns segundos</div>
+    </div>
+  `, async ()=>{
+    const arq = document.getElementById('f_arq').files[0];
+    const nomeArq = arq?arq.name:(existing?.arquivo||'documento.pdf');
+    if(!arq && !existing){ toast('Selecione um arquivo PDF','err'); return false; }
+    let ia = {iaStatus:'pendente',iaNota:''};
+    let arquivoData = existing?.arquivoData||'';
+    if(arq){
+      try{ arquivoData = await fileToBase64(arq); }
+      catch(e){ toast('Erro ao ler arquivo','err'); return false; }
+    }
+    if(DB.config.iaHabilitada && arq){
+      document.getElementById('iaLoading').style.display='block';
+      if(temGemini) ia = await analisarComGemini(arq, docExigido, contexto);
+      else ia = simularIA();
+    } else if(existing && !arq) {
+      ia = {iaStatus:existing.iaStatus, iaNota:existing.iaNota};
+    }
+    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoData,emitidoEm:val('f_emit'),validade:validadeDias?val('f_val'):null,
+      iaStatus:ia.iaStatus, iaNota:ia.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
+    if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
+    try{ save(); }
+    catch(e){ toast('Erro: limite de storage atingido. Use Supabase em produção.','err'); return false; }
+    toast(`Documento enviado. IA: ${ia.iaStatus}${ia.iaNota?' — '+ia.iaNota.slice(0,80):''}`, ia.iaStatus==='recusado'?'err':ia.iaStatus==='duvida'?'warn':'');
+    closeModal();
+    go(currentPage);
+    return true;
+  });
+}
+function excluirDoc(docId){
+  if(!confirm('Excluir este documento? Será possível reenviar depois.')) return;
+  DB.documentos = DB.documentos.filter(d=>d.id!==docId);
+  save(); toast('Documento excluído'); closeModal(); go(currentPage);
+}
+function aprovarDoc(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  d.sesmtStatus = 'aprovado'; d.sesmtPor = session.id; d.sesmtMotivo = '';
+  save(); toast('Documento aprovado'); closeModal(); go(currentPage);
+}
+function recusarDoc(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  const ex = DB.catalogoDocs.find(c=>c.id===d.docId);
+  showModal(`Recusar: ${ex?.nome||d.docId}`, `
+    <div class="alert">⚠️ Descreva DETALHADAMENTE o motivo da recusa. O fornecedor verá exatamente este texto para corrigir e reenviar.</div>
+    <div class="form-group"><label>Motivo da recusa (detalhado)</label>
+      <textarea id="f_motivo" rows="8" placeholder="Ex: O ASO está em nome de outro colaborador. O documento enviado refere-se a João Silva mas o cadastro é de José Pereira. Por favor reenviar o ASO correto, em nome de José Pereira, com data de exame recente, indicação APTO, CRM e assinatura do médico examinador."></textarea>
+    </div>
+    ${d.iaNota?`<div class="alert info" style="font-size:12px"><b>🤖 Análise da IA pode ajudar:</b><div style="white-space:pre-wrap;margin-top:6px">${escapeHtml(d.iaNota)}</div></div>`:''}
+  `, ()=>{
+    const motivo = val('f_motivo');
+    if(!motivo){ toast('Descreva o motivo','err'); return false; }
+    d.sesmtStatus = 'recusado'; d.sesmtMotivo = motivo; d.sesmtPor = session.id;
+    save(); toast('Documento recusado','warn'); closeModal(); go(currentPage);
+    return true;
+  });
+}
+
+/* ===== CATÁLOGO DE DOCUMENTOS ===== */
+function renderCatalogoDocs(){
+  const cats = {empresa:'🏢 Empresa', funcionario:'👷 Colaborador', maquina:'🚜 Máquina'};
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Catálogo de Documentos</div><div class="page-sub">Todos os documentos possíveis. Selecionados por obra/função.</div></div>
+      <button class="btn btn-primary" onclick="editCatalogoDoc()">+ Novo Documento</button>
+    </div>
+    ${Object.entries(cats).map(([k,v])=>{
+      const list = DB.catalogoDocs.filter(d=>d.categoria===k);
+      return `<div class="card">
+        <h3 style="margin-bottom:12px">${v} (${list.length})</h3>
+        <table>
+          <thead><tr><th>Nome</th><th>Validade</th><th>Checklist IA</th><th>Descrição</th><th></th></tr></thead>
+          <tbody>${list.map(d=>`<tr>
+            <td><b>${d.nome}</b></td>
+            <td>${d.validadeDias?d.validadeDias+' dias':'<span style="color:var(--muted)">Sem validade</span>'}</td>
+            <td>${d.checklistIA?'<span class="status ok">🤖 Configurado</span>':'<span class="status pendente">Não definido</span>'}</td>
+            <td style="color:var(--muted);font-size:12px;max-width:280px">${d.descricao||'-'}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="editCatalogoDoc('${d.id}')">Editar</button></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+    }).join('')}
+  `;
+}
+function editCatalogoDoc(id){
+  const d = id ? DB.catalogoDocs.find(x=>x.id===id) : {id:'',nome:'',categoria:'funcionario',validadeDias:null,descricao:'',checklistIA:''};
+  showModal(id?'Editar Documento':'Novo Documento',`
+    <div class="grid-2">
+      <div class="form-group"><label>ID interno</label><input id="f_id" value="${d.id}" ${id?'disabled':''} placeholder="ex: aso, nr35"></div>
+      <div class="form-group"><label>Categoria</label>
+        <select id="f_cat">
+          <option value="empresa" ${d.categoria==='empresa'?'selected':''}>Empresa</option>
+          <option value="funcionario" ${d.categoria==='funcionario'?'selected':''}>Colaborador</option>
+          <option value="maquina" ${d.categoria==='maquina'?'selected':''}>Máquina</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Nome do Documento</label><input id="f_nome" value="${d.nome}"></div>
+    <div class="form-group"><label>Validade (em dias) — vazio se não tem</label><input id="f_val" type="number" value="${d.validadeDias||''}" placeholder="ex: 365"></div>
+    <div class="form-group"><label>Descrição interna (aparece no app)</label><textarea id="f_desc" rows="2">${d.descricao||''}</textarea></div>
+    <div class="form-group">
+      <label>🤖 Checklist de validação da IA</label>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Descreva exatamente o que o Gemini deve conferir neste documento. Quanto mais específico, melhor o resultado. Ex: "Confirme que tem nome, CRM, data, assinatura..."</div>
+      <textarea id="f_check" rows="5" placeholder="O documento deve conter...">${d.checklistIA||''}</textarea>
+    </div>
+  `, ()=>{
+    const newId = id || val('f_id').toLowerCase().replace(/[^a-z0-9_]/g,'_');
+    if(!newId||!val('f_nome')){ toast('Preencha ID e nome','err'); return false; }
+    if(!id && DB.catalogoDocs.some(x=>x.id===newId)){ toast('Já existe doc com este ID','err'); return false; }
+    const data = {id:newId, categoria:val('f_cat'), nome:val('f_nome'), validadeDias:parseInt(val('f_val'))||null, descricao:val('f_desc'), checklistIA:val('f_check')};
+    if(id) Object.assign(d,data); else DB.catalogoDocs.push(data);
+    save(); go('catalogo_docs'); toast('Documento salvo'); return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{
+    if(confirm('Excluir do catálogo? Isso não remove docs já enviados.')){
+      DB.catalogoDocs=DB.catalogoDocs.filter(x=>x.id!==id);
+      DB.obras.forEach(o=>{o.docsEmpresa=o.docsEmpresa?.filter(x=>x!==id);o.docsFuncionarioBase=o.docsFuncionarioBase?.filter(x=>x!==id);o.docsMaquina=o.docsMaquina?.filter(x=>x!==id);});
+      DB.catalogoFuncoes.forEach(f=>{f.docsIds=f.docsIds?.filter(x=>x!==id);});
+      save(); go('catalogo_docs'); closeModal();
+    }
+  }}]:[]);
+}
+
+/* ===== CATÁLOGO DE FUNÇÕES ===== */
+function renderCatalogoFuncoes(){
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Funções</div><div class="page-sub">Cada função pré-seleciona documentos obrigatórios</div></div>
+      <button class="btn btn-primary" onclick="editFuncao()">+ Nova Função</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Função</th><th>Documentos obrigatórios</th><th>Colab.</th><th></th></tr></thead>
+        <tbody>${DB.catalogoFuncoes.map(f=>{
+          const usados = DB.funcionarios.filter(c=>c.funcaoId===f.id).length;
+          const docs = (f.docsIds||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+          return `<tr>
+            <td><b>${f.nome}</b></td>
+            <td>${docs.slice(0,6).map(d=>`<span class="pill">${d.nome}</span>`).join('')}${docs.length>6?` <span style="color:var(--muted);font-size:11px">+${docs.length-6}</span>`:''}</td>
+            <td>${usados}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="editFuncao('${f.id}')">Editar</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+  `;
+}
+function editFuncao(id){
+  const f = id ? DB.catalogoFuncoes.find(x=>x.id==id) : {nome:'',docsIds:[]};
+  showModal(id?'Editar Função':'Nova Função', `
+    <div class="form-group"><label>Nome da Função</label><input id="f_nome" value="${f.nome}"></div>
+    <div class="form-group">
+      <label>Documentos obrigatórios para esta função</label>
+      <div class="alert info" style="font-size:12px">Estes documentos serão somados aos definidos pela <b>obra</b> onde o colaborador atua.</div>
+      <div class="checkbox-list">${checkboxesDocs('funcionario', f.docsIds||[], 'f_docs')}</div>
+    </div>
+  `, ()=>{
+    const data = {nome:val('f_nome'), docsIds:getChecked('f_docs')};
+    if(!data.nome){ toast('Nome obrigatório','err'); return false; }
+    if(id) Object.assign(f,data); else DB.catalogoFuncoes.push({id:uid(),...data});
+    save(); go('catalogo_funcoes'); toast('Função salva'); return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{
+    if(DB.funcionarios.some(c=>c.funcaoId==id)){ toast('Há colaboradores usando esta função','err'); return; }
+    if(confirm('Excluir função?')){ DB.catalogoFuncoes=DB.catalogoFuncoes.filter(x=>x.id!=id); save(); go('catalogo_funcoes'); closeModal(); }
+  }}]:[], false, 'lg');
+}
+
+/* ===== USUÁRIOS INTERNOS ===== */
+function renderUsuarios(){
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Usuários</div><div class="page-sub">Logins internos da construtora e empresas parceiras</div></div>
+      <button class="btn btn-primary" onclick="editUsuario()">+ Novo Usuário</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Vínculo</th><th></th></tr></thead>
+        <tbody>${DB.usuarios.map(u=>{
+          let vinculo = '';
+          if(u.tipo==='empresa'){
+            const e = DB.empresas.find(x=>x.id===u.empresaId);
+            vinculo = e?e.razao:'-';
+          } else if(u.obraIds?.length){
+            vinculo = u.obraIds.map(oid=>{const o=DB.obras.find(x=>x.id===oid);return o?.nome;}).filter(Boolean).join(', ');
+          } else vinculo = u.tipo==='sesmt'||u.tipo==='visualizador'?'Todas as obras':'-';
+          return `<tr>
+            <td><b>${u.nome}</b>${u.naoApagar?' <span title="Protegido" style="color:var(--bm-orange)">🔒</span>':''}</td><td>${u.email}</td>
+            <td><span class="badge-role ${ROLES[u.tipo].badge}">${ROLES[u.tipo].label}</span></td>
+            <td>${vinculo}</td>
+            <td>${u.tipo!=='empresa'?`<button class="btn btn-secondary btn-sm" onclick="editUsuario(${u.id})">Editar</button>`:'<span style="color:var(--muted);font-size:12px">Gerenciado em Empresas</span>'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+  `;
+}
+function editUsuario(id){
+  const u = id ? DB.usuarios.find(x=>x.id===id) : {email:'',senha:'',nome:'',tipo:'coordenador',obraIds:[]};
+  showModal(id?'Editar Usuário':'Novo Usuário', `
+    <div class="form-group"><label>Nome</label><input id="f_nome" value="${u.nome}"></div>
+    <div class="grid-2">
+      <div class="form-group"><label>E-mail</label><input id="f_email" type="email" value="${u.email}"></div>
+      <div class="form-group"><label>Senha ${id?'(em branco mantém)':''}</label><input id="f_senha" type="password" placeholder="${id?'••••':''}"></div>
+    </div>
+    <div class="form-group"><label>Perfil</label>
+      <select id="f_tipo" ${u.naoApagar?'disabled':''} onchange="document.getElementById('obrasDiv').style.display=['coordenador','engenheiro','tst','cliente'].includes(this.value)?'block':'none'">
+        <option value="diretoria" ${u.tipo==='diretoria'?'selected':''}>Diretoria (controle total, protegido)</option>
+        <option value="sesmt" ${u.tipo==='sesmt'?'selected':''}>SESMT (acesso total)</option>
+        <option value="coordenador" ${u.tipo==='coordenador'?'selected':''}>Coordenador (suas obras)</option>
+        <option value="engenheiro" ${u.tipo==='engenheiro'?'selected':''}>Engenheiro (suas obras)</option>
+        <option value="tst" ${u.tipo==='tst'?'selected':''}>TST - Téc. Seg. Trabalho (suas obras, pode aprovar)</option>
+        <option value="cliente" ${u.tipo==='cliente'?'selected':''}>Cliente da Obra (leitura, suas obras)</option>
+        <option value="visualizador" ${u.tipo==='visualizador'?'selected':''}>Visualizador (leitura, todas obras)</option>
+      </select>
+    </div>
+    <div class="form-group" id="obrasDiv" style="display:${['coordenador','engenheiro','tst','cliente'].includes(u.tipo)?'block':'none'}">
+      <label>Obras vinculadas</label>
+      <div class="checkbox-list">${DB.obras.map(o=>`<label><input type="checkbox" name="f_obras" value="${o.id}" ${(u.obraIds||[]).includes(o.id)?'checked':''}>${o.nome}</label>`).join('')}</div>
+    </div>
+  `, ()=>{
+    const data = {nome:val('f_nome'),email:val('f_email'),tipo:val('f_tipo'),obraIds:getChecked('f_obras').map(x=>parseInt(x)),empresaId:null};
+    const senha = val('f_senha');
+    if(!data.nome||!data.email){ toast('Preencha','err'); return false; }
+    if(id){ Object.assign(u,data); if(senha) u.senha=senha; }
+    else {
+      if(!senha){ toast('Senha obrigatória','err'); return false; }
+      DB.usuarios.push({id:uid(),...data,senha});
+    }
+    save(); go('usuarios'); toast('Usuário salvo'); return true;
+  }, id&&u.tipo!=='empresa'&&u.id!==session.id&&!u.naoApagar?[{label:'Excluir',cls:'btn-danger',fn:()=>{if(confirm('Excluir?')){DB.usuarios=DB.usuarios.filter(x=>x.id!==id);save();go('usuarios');closeModal();}}}]:[]);
+}
+
+/* ===== RELATÓRIOS ===== */
+function renderRelatorios(){
+  let linhas = [];
+  function add(tipo, ref, nomeRef, contexto, obraId, empresaId, exigencia, doc){
+    const s = statusDoc(doc, exigencia);
+    linhas.push({tipo, nomeRef, contexto, docNome:exigencia.nome, emitido:doc?.emitidoEm||'-', validade:doc?.validade||'-', status:s, obraId, empresaId, iaStatus:doc?.iaStatus, sesmtStatus:doc?.sesmtStatus});
+  }
+  escopoEmpresas().forEach(e=>{
+    (e.obraIds||[]).forEach(oid=>{
+      const obra = DB.obras.find(o=>o.id===oid); if(!obra) return;
+      (obra.docsEmpresa||[]).forEach(did=>{
+        const ex = DB.catalogoDocs.find(c=>c.id===did); if(!ex) return;
+        add('empresa', e, e.razao, `${e.cnpj} • ${obra.nome}`, oid, e.id, ex, getDoc('empresa',e.id,did,oid));
+      });
+    });
+  });
+  escopoFuncionarios().forEach(f=>{
+    const emp=DB.empresas.find(x=>x.id===f.empresaId); const obra=DB.obras.find(x=>x.id===f.obraId);
+    docsExigidosFuncionario(f).forEach(ex=>add('funcionario',f,f.nome,`${emp?.razao||''} • ${obra?.nome||''}`,f.obraId,f.empresaId,ex,getDoc('funcionario',f.id,ex.id)));
+  });
+  escopoMaquinas().forEach(m=>{
+    const emp=DB.empresas.find(x=>x.id===m.empresaId);
+    docsExigidosMaquina(m).forEach(ex=>add('maquina',m,m.descricao,emp?.razao||'',m.obraId,m.empresaId,ex,getDoc('maquina',m.id,ex.id)));
+  });
+  // aplicar filtros
+  if(filtros.obraId) linhas=linhas.filter(l=>l.obraId==filtros.obraId||l.tipo==='empresa');
+  if(filtros.empresaId) linhas=linhas.filter(l=>l.empresaId==filtros.empresaId);
+  if(filtros.busca){ const q=filtros.busca.toLowerCase(); linhas=linhas.filter(l=>(l.nomeRef+' '+l.contexto+' '+l.docNome).toLowerCase().includes(q)); }
+  if(filtros.status) linhas=linhas.filter(l=>l.status.cls===filtros.status);
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Relatórios</div><div class="page-sub">${linhas.length} registros</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="exportarCSV()">⬇️ CSV</button>
+        <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir</button>
+      </div>
+    </div>
+    ${toolbarFiltros({busca:true,obra:true,empresa:true,status:true})}
+    <div class="card">
+      <table id="relTable">
+        <thead><tr><th>Tipo</th><th>Item</th><th>Contexto</th><th>Documento</th><th>Emissão</th><th>Validade</th><th>IA</th><th>SESMT</th><th>Status</th></tr></thead>
+        <tbody>${linhas.map(l=>`<tr>
+          <td>${l.tipo==='empresa'?'🏢':l.tipo==='funcionario'?'👷':'🚜'}</td>
+          <td><b>${l.nomeRef}</b></td>
+          <td style="font-size:12px;color:var(--muted)">${l.contexto}</td>
+          <td>${l.docNome}</td>
+          <td>${l.emitido}</td>
+          <td>${l.validade}</td>
+          <td>${l.iaStatus?`<span class="badge-ia ${l.iaStatus}">${l.iaStatus}</span>`:'-'}</td>
+          <td>${l.sesmtStatus?`<span class="badge-ia ${l.sesmtStatus==='aprovado'?'aprovado':l.sesmtStatus==='recusado'?'recusado':'pendente'}">${l.sesmtStatus}</span>`:'-'}</td>
+          <td><span class="status ${l.status.cls}">${l.status.label}</span></td>
+        </tr>`).join('')}</tbody>
+      </table>
+      ${linhas.length===0?'<div class="empty">Sem registros</div>':''}
+    </div>
+  `;
+}
+function exportarCSV(){
+  const rows = [['Tipo','Item','Contexto','Documento','Emissão','Validade','IA','SESMT','Status']];
+  document.querySelectorAll('#relTable tbody tr').forEach(tr=>{
+    rows.push([...tr.children].map(td=>td.innerText.replace(/\n/g,' ').trim()));
+  });
+  const csv = rows.map(r=>r.map(c=>`"${c.replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='relatorio-sesmt.csv'; a.click();
+}
+
+function destinatariosObra(obraId){
+  const obra = DB.obras.find(o=>o.id===obraId);
+  if(!obra) return {to:[], cc:[]};
+  const cc = [];
+  [obra.coordenadorId,obra.engenheiroId,obra.tstId].forEach(uid=>{
+    const u = DB.usuarios.find(x=>x.id===uid);
+    if(u?.email) cc.push(u.email);
+  });
+  // clientes vinculados
+  DB.usuarios.filter(u=>u.tipo==='cliente' && (u.obraIds||[]).includes(obraId)).forEach(c=>cc.push(c.email));
+  // extras manuais
+  (obra.destinatariosExtras||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean).forEach(e=>cc.push(e));
+  return {cc:[...new Set(cc)]};
+}
+
+/* ===== NOTIFICAÇÕES ===== */
+function pendenciasPorEmpresa(){
+  const grupos = {};
+  function add(empresaId, item){ (grupos[empresaId]=grupos[empresaId]||[]).push(item); }
+  DB.empresas.forEach(e=>{
+    (e.obraIds||[]).forEach(oid=>{
+      const obra = DB.obras.find(o=>o.id===oid); if(!obra) return;
+      (obra.docsEmpresa||[]).forEach(did=>{
+        const ex = DB.catalogoDocs.find(c=>c.id===did); if(!ex) return;
+        const doc=getDoc('empresa',e.id,did,oid); const s=statusDoc(doc,ex);
+        if(s.cls!=='ok'&&s.cls!=='info') add(e.id,{cat:'Empresa',ref:`${e.razao} (${obra.nome})`,doc:ex.nome,status:s.label});
+      });
+    });
+  });
+  DB.funcionarios.forEach(f=>{
+    docsExigidosFuncionario(f).forEach(de=>{
+      const doc=getDoc('funcionario',f.id,de.id); const s=statusDoc(doc,de);
+      if(s.cls!=='ok'&&s.cls!=='info') add(f.empresaId,{cat:'Colaborador',ref:f.nome,doc:de.nome,status:s.label});
+    });
+  });
+  DB.maquinas.forEach(m=>{
+    docsExigidosMaquina(m).forEach(de=>{
+      const doc=getDoc('maquina',m.id,de.id); const s=statusDoc(doc,de);
+      if(s.cls!=='ok'&&s.cls!=='info') add(m.empresaId,{cat:'Máquina',ref:m.descricao,doc:de.nome,status:s.label});
+    });
+  });
+  return grupos;
+}
+
+function notificarEmpresa(empresaId){
+  const grupos = pendenciasPorEmpresa();
+  if(!grupos[empresaId]||grupos[empresaId].length===0){ toast('Empresa não tem pendências'); return; }
+  const emp = DB.empresas.find(e=>e.id===empresaId);
+  const obraIds = [...new Set([...DB.funcionarios.filter(f=>f.empresaId===emp.id).map(f=>f.obraId),...DB.maquinas.filter(m=>m.empresaId===emp.id).map(m=>m.obraId),...(emp.obraIds||[])])].filter(Boolean);
+  const allCc = new Set();
+  obraIds.forEach(oid=>destinatariosObra(oid).cc.forEach(c=>allCc.add(c)));
+  showModal(`Notificar: ${emp.razao}`, previewEmail(emp, grupos[empresaId]), async ()=>{
+    const html = previewEmail(emp, grupos[empresaId]);
+    const ok = await enviarWebhook({to:emp.email, cc:[...allCc], subject:`[SESMT] Pendências - ${emp.razao}`, html, pendencias:grupos[empresaId], empresa:emp.razao});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:[...allCc].join(';'),assunto:`[SESMT] Pendências - ${emp.razao}`,itens:grupos[empresaId].length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
+    save(); toast(ok?'E-mail enviado via webhook':'Webhook não configurado - apenas registrado'); return true;
+  }, [], false, 'lg');
+}
+
+function notificarFuncionario(funcId){
+  const f = DB.funcionarios.find(x=>x.id===funcId);
+  const emp = DB.empresas.find(e=>e.id===f.empresaId);
+  const pend = [];
+  docsExigidosFuncionario(f).forEach(de=>{
+    const doc=getDoc('funcionario',f.id,de.id); const s=statusDoc(doc,de);
+    if(s.cls!=='ok'&&s.cls!=='info') pend.push({cat:'Colaborador',ref:f.nome,doc:de.nome,status:s.label});
+  });
+  if(pend.length===0){ toast('Colaborador sem pendências'); return; }
+  const dest = destinatariosObra(f.obraId);
+  showModal(`Notificar pendências de ${f.nome}`, previewEmail(emp, pend, f.nome, [f.obraId]), async ()=>{
+    const html = previewEmail(emp, pend, f.nome, [f.obraId]);
+    const ok = await enviarWebhook({to:emp.email, cc:dest.cc, subject:`[SESMT] Pendências - ${f.nome}`, html, pendencias:pend, colaborador:f.nome, empresa:emp.razao});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:dest.cc.join(';'),assunto:`[SESMT] Pendências - ${f.nome}`,itens:pend.length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
+    save(); toast(ok?'E-mail enviado via webhook':'Sem webhook - registrado'); return true;
+  }, [], false, 'lg');
+}
+
+function previewEmail(emp, pendencias, colaboradorNome, obraIds){
+  // coletar todas obras envolvidas
+  const obras = obraIds && obraIds.length ? obraIds : [...new Set(DB.funcionarios.filter(f=>f.empresaId===emp.id).map(f=>f.obraId).concat(DB.maquinas.filter(m=>m.empresaId===emp.id).map(m=>m.obraId)))].filter(Boolean);
+  const allCc = new Set();
+  obras.forEach(oid=>destinatariosObra(oid).cc.forEach(c=>allCc.add(c)));
+  return `
+    <div style="font-family:monospace;font-size:12px;line-height:1.7;background:#f9fafb;padding:12px;border-radius:6px">
+      <b>De:</b> ${DB.config.smtp.remetente}<br>
+      <b>Para:</b> ${emp.email}<br>
+      <b>Cc:</b> ${[...allCc].join('; ')||'(nenhum)'}<br>
+      <b>Assunto:</b> [SESMT B&M] Pendências - ${colaboradorNome||emp.razao}
+    </div>
+    <div style="margin-top:14px">
+      <p>Prezados,</p>
+      <p>Foram identificadas pendências documentais ${colaboradorNome?`do colaborador <b>${colaboradorNome}</b>`:`da empresa <b>${emp.razao}</b>`} que precisam ser regularizadas. Envio em PDF para <b>sesmt@brandaoemarmo.com.br</b>. Prazo de análise: 48h.</p>
+      <table>
+        <thead><tr><th>Categoria</th><th>Item</th><th>Documento</th><th>Situação</th></tr></thead>
+        <tbody>${pendencias.map(p=>`<tr><td>${p.cat}</td><td>${p.ref}</td><td>${p.doc}</td><td><span class="status ${p.status.includes('Vence')?'warn':p.status==='VENCIDO'||p.status==='RECUSADO'?'crit':'pendente'}">${p.status}</span></td></tr>`).join('')}</tbody>
+      </table>
+      <p style="margin-top:12px">Atenciosamente,<br>SESMT - Brandão & Marmo Engenharia</p>
+    </div>
+  `;
+}
+
+function enviarNotificacoesEmLote(){
+  const grupos = pendenciasPorEmpresa();
+  const ids = Object.keys(grupos);
+  if(ids.length===0){ toast('Nada a notificar'); return; }
+  if(!confirm(`Enviar ${ids.length} notificação(ões)? ${DB.config.smtp.host?'':'(SMTP não configurado — apenas histórico)'}`)) return;
+  ids.forEach(eid=>{
+    const emp = DB.empresas.find(e=>e.id==eid);
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,assunto:`[SESMT B&M] Pendências - ${emp.razao}`,itens:grupos[eid].length,enviadoPor:session.nome});
+  });
+  save(); toast(`${ids.length} notificação(ões) ${DB.config.smtp.host?'enviadas':'simuladas'}`);
+  if(currentPage==='notificacoes') go('notificacoes');
+}
+
+function renderNotificacoes(){
+  const grupos = pendenciasPorEmpresa();
+  const ids = Object.keys(grupos);
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Notificações</div><div class="page-sub">Disparo de pendências por e-mail</div></div>
+      <button class="btn btn-primary" onclick="enviarNotificacoesEmLote()">✉️ Disparar em lote</button>
+    </div>
+    <div class="alert">⚠️ <b>Demo:</b> SMTP em <a onclick="go('config')" style="color:var(--bm-blue);cursor:pointer;text-decoration:underline">Configurações</a> dispara real. Aqui é simulado.</div>
+    <div class="card">
+      <h3 style="margin-bottom:10px">📧 E-mails a enviar (${ids.length} empresa(s))</h3>
+      ${ids.length===0?'<div class="empty"><div class="empty-icon">✅</div>Tudo em dia</div>':
+        ids.map(eid=>{const emp=DB.empresas.find(e=>e.id==eid);return `
+          <details>
+            <summary><b>${emp.razao}</b> → ${emp.email} <span style="color:var(--muted);font-weight:400">(${grupos[eid].length} pendências)</span>
+              <button class="btn btn-warn btn-sm" style="float:right" onclick="event.stopPropagation();notificarEmpresa(${eid})">Enviar agora</button></summary>
+            <div style="padding:14px">${previewEmail(emp,grupos[eid])}</div>
+          </details>`;}).join('')
+      }
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:10px">📜 Histórico (${DB.logs.length})</h3>
+      ${DB.logs.length===0?'<div class="empty">Sem envios</div>':`
+        <table><thead><tr><th>Data</th><th>Para</th><th>Assunto</th><th>Itens</th><th>Por</th></tr></thead>
+        <tbody>${DB.logs.slice().reverse().slice(0,30).map(l=>`<tr><td>${l.data}</td><td>${l.para}</td><td>${l.assunto}</td><td>${l.itens}</td><td>${l.enviadoPor||'-'}</td></tr>`).join('')}</tbody></table>`}
+    </div>
+  `;
+}
+
+/* ===== CONFIG ===== */
+function renderConfig(){
+  const c = DB.config;
+  document.getElementById('main').innerHTML = `
+    <div class="page-header"><div><div class="page-title">Configurações</div></div></div>
+
+    <div class="card">
+      <h3 style="margin-bottom:14px">🎨 Identidade Visual</h3>
+      <div class="grid-2">
+        <div class="form-group"><label>Nome da Empresa</label><input id="cf_nome" value="${c.nomeEmpresa||'BRANDÃO & MARMO'}"></div>
+        <div class="form-group">
+          <label>Logo da empresa (PNG/JPG)</label>
+          <input id="cf_logo" type="file" accept="image/*" onchange="previewLogo(this)">
+          ${c.logoData?`<img id="logoPrev" src="${c.logoData}" style="max-height:60px;margin-top:10px;border:1px solid var(--border);padding:6px;border-radius:6px;background:#fff">`:'<img id="logoPrev" style="display:none">'}
+          ${c.logoData?'<button class="btn btn-danger btn-sm" style="margin-top:6px" onclick="DB.config.logoData=\'\';save();go(\'config\');toast(\'Logo removido\')">Remover logo</button>':''}
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Cor primária</label><input id="cf_cor1" type="color" value="${c.corPrimaria||'#1a3d7c'}"></div>
+        <div class="form-group"><label>Cor de destaque</label><input id="cf_cor2" type="color" value="${c.corSecundaria||'#e8a23a'}"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:14px">🔗 Webhook Make.com (envio real de e-mails)</h3>
+      <div class="alert info" style="font-size:12px;margin-bottom:14px">
+        Cole a URL do webhook do Make.com. Toda notificação será enviada como POST JSON para essa URL.<br>
+        <b>Payload enviado:</b> <code>{to, cc, subject, html, pendencias, obra, empresa}</code>
+      </div>
+      <div class="form-group"><label>URL do Webhook</label><input id="cf_webhook" value="${c.webhookMake||''}" placeholder="https://hook.eu1.make.com/abc123..."></div>
+      <button class="btn btn-secondary btn-sm" onclick="testarWebhook()">🧪 Testar webhook</button>
+      <span id="webhookRes" style="margin-left:10px;font-size:12px"></span>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:14px">📧 SMTP (alternativa ao webhook)</h3>
+      <div class="grid-2">
+        <div class="form-group"><label>Servidor</label><input id="cf_host" value="${c.smtp.host}"></div>
+        <div class="form-group"><label>Porta</label><input id="cf_porta" type="number" value="${c.smtp.porta}"></div>
+        <div class="form-group"><label>Usuário</label><input id="cf_user" value="${c.smtp.usuario}"></div>
+        <div class="form-group"><label>Senha</label><input id="cf_pass" type="password" value="${c.smtp.senha}"></div>
+      </div>
+      <div class="form-group"><label>Remetente</label><input id="cf_from" value="${c.smtp.remetente}"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:14px">⏰ Alertas</h3>
+      <div class="form-group" style="max-width:280px"><label>Dias antecedência para alerta de vencimento</label><input id="cf_dias" type="number" value="${c.diasAvisoVencimento}"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:6px">🤖 Análise por IA (Google Gemini)</h3>
+      <div class="alert info" style="font-size:12px;margin-bottom:14px">
+        <b>Gemini é gratuito</b> para até ~1.500 análises/dia. Crie sua chave em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--bm-blue)">aistudio.google.com/app/apikey</a> → "Create API key" → copie e cole abaixo.
+      </div>
+      <div class="form-group"><label><input type="checkbox" id="cf_ia" ${c.iaHabilitada?'checked':''} style="width:auto"> Habilitar análise por IA ao enviar documentos</label></div>
+      <div class="form-group"><label>Chave da API Gemini</label><input id="cf_gem" type="password" value="${c.geminiApiKey||''}" placeholder="AIzaSy..."></div>
+      <div class="form-group" style="max-width:280px"><label>Modelo</label>
+        <select id="cf_gemmod">
+          <option value="gemini-2.0-flash" ${(c.geminiModel||'gemini-2.0-flash')==='gemini-2.0-flash'?'selected':''}>gemini-2.0-flash (rápido, recomendado)</option>
+          <option value="gemini-2.5-flash" ${c.geminiModel==='gemini-2.5-flash'?'selected':''}>gemini-2.5-flash (mais preciso)</option>
+          <option value="gemini-1.5-flash" ${c.geminiModel==='gemini-1.5-flash'?'selected':''}>gemini-1.5-flash (legado)</option>
+        </select>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="testarGemini()">🧪 Testar conexão</button>
+      <span id="testRes" style="margin-left:10px;font-size:12px"></span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="salvarConfig()">💾 Salvar</button>
+      <button class="btn btn-danger" onclick="if(confirm('Zerar todos os dados?')){localStorage.removeItem(STORAGE_KEY);location.reload();}">⚠️ Resetar Sistema</button>
+    </div>
+  `;
+}
+function salvarConfig(){
+  DB.config.smtp={host:val('cf_host'),porta:parseInt(val('cf_porta'))||587,usuario:val('cf_user'),senha:val('cf_pass'),remetente:val('cf_from')};
+  DB.config.diasAvisoVencimento=parseInt(val('cf_dias'))||30;
+  DB.config.iaHabilitada=document.getElementById('cf_ia').checked;
+  DB.config.geminiApiKey=val('cf_gem');
+  DB.config.geminiModel=val('cf_gemmod')||'gemini-2.0-flash';
+  DB.config.nomeEmpresa=val('cf_nome')||'BRANDÃO & MARMO';
+  DB.config.corPrimaria=val('cf_cor1')||'#1a3d7c';
+  DB.config.corSecundaria=val('cf_cor2')||'#e8a23a';
+  DB.config.webhookMake=val('cf_webhook');
+  // logo (lê do preview)
+  const prev = document.getElementById('logoPrev');
+  if(prev && prev.src && prev.src.startsWith('data:')) DB.config.logoData = prev.src;
+  aplicarTema();
+  save(); toast('Configurações salvas'); go('config');
+}
+
+function previewLogo(input){
+  const f = input.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    const img = document.getElementById('logoPrev');
+    img.src = r.result; img.style.display='block'; img.style.maxHeight='60px';
+    img.style.marginTop='10px'; img.style.padding='6px'; img.style.border='1px solid var(--border)'; img.style.borderRadius='6px';
+  };
+  r.readAsDataURL(f);
+}
+
+function aplicarTema(){
+  document.documentElement.style.setProperty('--bm-blue', DB.config.corPrimaria||'#1a3d7c');
+  document.documentElement.style.setProperty('--bm-orange', DB.config.corSecundaria||'#e8a23a');
+}
+
+async function testarWebhook(){
+  const url = val('cf_webhook');
+  const el = document.getElementById('webhookRes');
+  if(!url){ el.innerHTML='<span style="color:var(--crit)">Cole a URL primeiro</span>'; return; }
+  el.innerHTML='⏳ Testando...';
+  try{
+    const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      teste:true, to:'teste@exemplo.com', subject:'Teste do SESMT B&M', html:'<p>Mensagem de teste</p>'
+    })});
+    if(res.ok) el.innerHTML='<span style="color:var(--ok)">✓ Webhook respondeu OK</span>';
+    else el.innerHTML=`<span style="color:var(--crit)">❌ Status ${res.status}</span>`;
+  }catch(e){ el.innerHTML=`<span style="color:var(--crit)">❌ ${e.message}</span>`; }
+}
+
+async function enviarWebhook(payload){
+  if(!DB.config.webhookMake) return false;
+  try{
+    await fetch(DB.config.webhookMake,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    return true;
+  }catch(e){ console.error('webhook',e); return false; }
+}
+
+async function testarGemini(){
+  const key = val('cf_gem');
+  const model = val('cf_gemmod')||'gemini-2.0-flash';
+  const el = document.getElementById('testRes');
+  if(!key){ el.innerHTML = '<span style="color:var(--crit)">Cole a chave primeiro</span>'; return; }
+  el.innerHTML = '⏳ Testando...';
+  try{
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({contents:[{parts:[{text:'Responda apenas "OK" se você está funcionando.'}]}]})
+    });
+    if(!res.ok){
+      const err = await res.text();
+      el.innerHTML = `<span style="color:var(--crit)">❌ Erro ${res.status}: ${err.slice(0,120)}</span>`;
+      return;
+    }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '(sem resposta)';
+    el.innerHTML = `<span style="color:var(--ok)">✓ Conectado! Modelo respondeu: "${text.trim().slice(0,50)}"</span>`;
+  } catch(e){
+    el.innerHTML = `<span style="color:var(--crit)">❌ ${e.message}</span>`;
+  }
+}
+
+/* ===== DOWNLOAD INDIVIDUAL E EM MASSA ===== */
+function baixarDoc(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(!d||!d.arquivoData){ toast('Arquivo não disponível','err'); return; }
+  const a = document.createElement('a');
+  a.href = 'data:application/pdf;base64,'+d.arquivoData;
+  a.download = d.arquivo||'documento.pdf';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function safeName(s){ return (s||'').replace(/[\\\/:*?"<>|]/g,'_').replace(/\s+/g,'_').slice(0,80); }
+
+async function baixarZip(docs, nomeZip){
+  if(typeof JSZip==='undefined'){ toast('JSZip não carregou','err'); return; }
+  if(!docs.length){ toast('Nenhum arquivo para baixar','warn'); return; }
+  const zip = new JSZip();
+  let count = 0;
+  docs.forEach(d=>{
+    if(!d.arquivoData) return;
+    const exigido = DB.catalogoDocs.find(x=>x.id===d.docId);
+    let pasta = '';
+    if(d.refTipo==='empresa'){
+      const e = DB.empresas.find(x=>x.id===d.refId);
+      const o = d.obraId?DB.obras.find(x=>x.id===d.obraId):null;
+      pasta = `EMPRESAS/${safeName(e?.razao||'?')}${o?'/'+safeName(o.nome):''}`;
+    } else if(d.refTipo==='funcionario'){
+      const f = DB.funcionarios.find(x=>x.id===d.refId);
+      const emp = DB.empresas.find(x=>x.id===f?.empresaId);
+      pasta = `COLABORADORES/${safeName(emp?.razao||'?')}/${safeName(f?.nome||'?')}`;
+    } else {
+      const m = DB.maquinas.find(x=>x.id===d.refId);
+      const emp = DB.empresas.find(x=>x.id===m?.empresaId);
+      pasta = `MAQUINAS/${safeName(emp?.razao||'?')}/${safeName(m?.descricao||'?')}`;
+    }
+    const fileName = `${safeName(exigido?.nome||d.docId)}_${d.arquivo||'doc.pdf'}`;
+    zip.file(`${pasta}/${fileName}`, d.arquivoData, {base64:true});
+    count++;
+  });
+  if(count===0){ toast('Nenhum arquivo com PDF salvo','warn'); return; }
+  toast(`Compactando ${count} arquivo(s)...`);
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (nomeZip||'documentos_sesmt')+'.zip';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+
+function renderDownloads(){
+  let docs = DB.documentos.filter(d=>d.arquivoData);
+  // aplicar escopo
+  if(session.tipo==='empresa') docs = docs.filter(d=>{
+    if(d.refTipo==='empresa') return d.refId===session.empresaId;
+    if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.empresaId===session.empresaId; }
+    if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.empresaId===session.empresaId; }
+  });
+  if(['coordenador','engenheiro','tst','cliente'].includes(session.tipo)){
+    docs = docs.filter(d=>{
+      if(d.refTipo==='empresa') return true;
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return session.obraIds.includes(f?.obraId); }
+      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return session.obraIds.includes(m?.obraId); }
+    });
+  }
+  // filtros UI
+  if(filtros.obraId){
+    const oid=parseInt(filtros.obraId);
+    docs = docs.filter(d=>{
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.obraId===oid; }
+      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.obraId===oid; }
+      if(d.refTipo==='empresa') return (d.obraId||null)===oid;
+    });
+  }
+  if(filtros.empresaId){
+    const eid=parseInt(filtros.empresaId);
+    docs = docs.filter(d=>{
+      if(d.refTipo==='empresa') return d.refId===eid;
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.empresaId===eid; }
+      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.empresaId===eid; }
+    });
+  }
+  if(filtros.status==='ok') docs = docs.filter(d=>d.sesmtStatus==='aprovado');
+  else if(filtros.status==='pendente') docs = docs.filter(d=>d.sesmtStatus==='pendente');
+  else if(filtros.status==='crit') docs = docs.filter(d=>d.sesmtStatus==='recusado');
+
+  if(filtros.busca){
+    const q = filtros.busca.toLowerCase();
+    docs = docs.filter(d=>{
+      const cat = DB.catalogoDocs.find(c=>c.id===d.docId);
+      let nome = '';
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); nome=f?.nome||''; }
+      else if(d.refTipo==='empresa'){ const e=DB.empresas.find(x=>x.id===d.refId); nome=e?.razao||''; }
+      else if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); nome=m?.descricao||''; }
+      return (nome+' '+(cat?.nome||'')+' '+(d.arquivo||'')).toLowerCase().includes(q);
+    });
+  }
+
+  const nomeZip = filtros.obraId ? `obra_${safeName(DB.obras.find(o=>o.id==filtros.obraId)?.nome||'')}_docs`
+                : filtros.empresaId ? `empresa_${safeName(DB.empresas.find(e=>e.id==filtros.empresaId)?.razao||'')}_docs`
+                : 'documentos_sesmt';
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Downloads</div><div class="page-sub">Baixe documentos individualmente ou em massa (ZIP)</div></div>
+      <button class="btn btn-primary" onclick='baixarZip(${JSON.stringify(docs.map(d=>d.id))}.map(id=>DB.documentos.find(x=>x.id===id)), "${nomeZip}")'>📦 Baixar ${docs.length} em ZIP</button>
+    </div>
+    ${toolbarFiltros({busca:true,obra:true,empresa:true,status:true})}
+    <div class="card">
+      <table>
+        <thead><tr><th>Tipo</th><th>Vínculo</th><th>Documento</th><th>Arquivo</th><th>Emissão</th><th>Validade</th><th>Status</th><th></th></tr></thead>
+        <tbody>${docs.map(d=>{
+          const exigido = DB.catalogoDocs.find(c=>c.id===d.docId);
+          let vinc = '';
+          if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); const e=DB.empresas.find(x=>x.id===f?.empresaId); vinc = `👷 ${f?.nome||'?'} (${e?.razao||'?'})`; }
+          else if(d.refTipo==='empresa'){ const e=DB.empresas.find(x=>x.id===d.refId); vinc = `🏢 ${e?.razao||'?'}`; }
+          else { const m=DB.maquinas.find(x=>x.id===d.refId); const e=DB.empresas.find(x=>x.id===m?.empresaId); vinc = `🚜 ${m?.descricao||'?'} (${e?.razao||'?'})`; }
+          return `<tr>
+            <td>${d.refTipo==='empresa'?'Empresa':d.refTipo==='funcionario'?'Colab.':'Máquina'}</td>
+            <td>${vinc}</td>
+            <td>${exigido?.nome||d.docId}</td>
+            <td style="font-size:12px">${d.arquivo||'-'}</td>
+            <td>${d.emitidoEm||'-'}</td>
+            <td>${d.validade||'-'}</td>
+            <td><span class="badge-ia ${d.sesmtStatus==='aprovado'?'aprovado':d.sesmtStatus==='recusado'?'recusado':'pendente'}">${d.sesmtStatus||'-'}</span></td>
+            <td><button class="btn btn-secondary btn-sm" onclick="baixarDoc(${d.id})">⬇️</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      ${docs.length===0?'<div class="empty"><div class="empty-icon">📂</div>Nenhum arquivo para baixar com esses filtros</div>':''}
+    </div>
+  `;
+}
+
+/* ===== DEVOLUTIVA - MATRIZ POR OBRA ===== */
+function renderDevolutiva(){
+  const obras = escopoObras();
+  if(!filtros.obraId){
+    document.getElementById('main').innerHTML = `
+      <div class="page-header">
+        <div><div class="page-title">Devolutiva ao Cliente</div><div class="page-sub">Matriz de conformidade por obra, pronta para enviar</div></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:14px">Selecione a obra:</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
+          ${obras.length===0?'<div class="empty">Cadastre uma obra primeiro</div>':obras.map(o=>`
+            <button class="btn btn-secondary" style="padding:18px;text-align:left;display:block;width:100%" onclick="filtros.obraId='${o.id}';go('devolutiva')">
+              <div style="font-weight:700;color:var(--bm-blue);font-size:16px">${o.nome}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">${o.endereco||''}</div>
+              <div style="font-size:12px;color:var(--muted)">Cliente: ${o.clienteNome||'-'}</div>
+            </button>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const obra = DB.obras.find(o=>o.id==filtros.obraId);
+  if(!obra){ filtros.obraId=''; go('devolutiva'); return; }
+  // empresas que atuam na obra
+  const empresasObra = [...new Set([
+    ...DB.funcionarios.filter(f=>f.obraId===obra.id).map(f=>f.empresaId),
+    ...DB.maquinas.filter(m=>m.obraId===obra.id).map(m=>m.empresaId)
+  ])].map(eid=>DB.empresas.find(e=>e.id===eid)).filter(Boolean);
+
+  // colunas empresa (docs da obra para empresa)
+  const colsEmpresa = (obra.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+
+  // colunas colaborador: união docsFuncionarioBase + todos docs de todas funções dos colab da obra
+  const colabsObra = DB.funcionarios.filter(f=>f.obraId===obra.id);
+  const docsColabSet = new Set(obra.docsFuncionarioBase||[]);
+  colabsObra.forEach(f=>{
+    const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
+    (funcao?.docsIds||[]).forEach(d=>docsColabSet.add(d));
+  });
+  const colsColab = [...docsColabSet].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+
+  function statusCell(doc, exigencia){
+    const s = statusDoc(doc, exigencia);
+    if(s.cls==='ok') return {txt:'OK', bg:'#16a34a', fg:'#fff'};
+    if(s.cls==='pendente'||s.cls==='warn'||s.cls==='crit'||s.cls==='info') return {txt:'PENDENTE', bg:'#dc2626', fg:'#fff'};
+    return {txt:'-', bg:'#9ca3af', fg:'#fff'};
+  }
+
+  // status final
+  let temPendencia = false;
+  empresasObra.forEach(e=>colsEmpresa.forEach(de=>{ const d=getDoc('empresa',e.id,de.id,obra.id); if(!d||statusDoc(d,de).cls!=='ok') temPendencia=true; }));
+  colabsObra.forEach(f=>{
+    const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
+    const exigidos = new Set([...(obra.docsFuncionarioBase||[]),...(funcao?.docsIds||[])]);
+    colsColab.forEach(de=>{
+      if(!exigidos.has(de.id)) return;
+      const doc = getDoc('funcionario',f.id,de.id);
+      if(!doc||statusDoc(doc,de).cls!=='ok') temPendencia=true;
+    });
+  });
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Devolutiva: ${obra.nome}</div>
+        <div class="page-sub">Cliente: ${obra.clienteNome||'-'} • ${empresasObra.length} empresa(s) • ${colabsObra.length} colaborador(es)</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="filtros.obraId='';go('devolutiva')">← Trocar obra</button>
+        <button class="btn btn-secondary" onclick="window.print()">🖨️ Imprimir</button>
+        <button class="btn btn-secondary" onclick="exportarDevolutivaCSV()">⬇️ CSV</button>
+        <button class="btn btn-primary" onclick="enviarDevolutiva(${obra.id})">✉️ Enviar ao cliente</button>
+      </div>
+    </div>
+
+    <div id="devolutivaEl" style="background:#fff;padding:24px;border-radius:8px;box-shadow:var(--shadow);overflow-x:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:2px solid var(--bm-blue);padding-bottom:10px">
+        <div>
+          <div style="font-size:22px;font-weight:700;color:var(--bm-blue)">BRANDÃO<span style="color:var(--bm-orange)">&MARMO</span></div>
+          <div style="font-size:11px;color:var(--muted);letter-spacing:2px">ENGENHARIA E CONSTRUÇÕES</div>
+        </div>
+        <div style="text-align:center;flex:1">
+          <h2 style="margin:0;font-size:18px">DEVOLUTIVA DOCUMENTAÇÃO — ${obra.nome.toUpperCase()}</h2>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">Emitido em ${new Date().toLocaleDateString('pt-BR')}</div>
+        </div>
+        <div style="background:var(--ok);color:#fff;padding:8px 16px;border-radius:50%;font-weight:700;font-size:11px;text-align:center;line-height:1.2">SEGURANÇA<br>DO TRABALHO</div>
+      </div>
+
+      ${empresasObra.length===0?'<div class="empty">Nenhuma empresa atuando nesta obra</div>':`
+        <h3 style="margin:14px 0 8px;color:var(--bm-blue);font-size:14px">EMPRESA</h3>
+        <table style="font-size:11px">
+          <thead><tr><th style="background:var(--bm-blue);color:#fff">Empresa</th>${colsEmpresa.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
+          <tbody>${empresasObra.map(e=>`<tr>
+            <td><b>${e.razao}</b></td>
+            ${colsEmpresa.map(de=>{ const c=statusCell(getDoc('empresa',e.id,de.id,obra.id),de); return `<td style="background:${c.bg};color:${c.fg};text-align:center;font-weight:700">${c.txt}</td>`; }).join('')}
+          </tr>`).join('')}</tbody>
+        </table>
+      `}
+
+      ${colabsObra.length===0?'':`
+        <h3 style="margin:20px 0 8px;color:var(--bm-blue);font-size:14px">COLABORADORES</h3>
+        <table style="font-size:11px">
+          <thead><tr><th style="background:var(--bm-blue);color:#fff">Colaborador</th>${colsColab.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
+          <tbody>${colabsObra.map(f=>{
+            const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
+            const exigidos = new Set([...(obra.docsFuncionarioBase||[]),...(funcao?.docsIds||[])]);
+            return `<tr>
+              <td><b>${f.nome}</b><div style="font-size:10px;color:var(--muted)">${funcao?.nome||''}</div></td>
+              ${colsColab.map(de=>{
+                if(!exigidos.has(de.id)) return '<td style="background:#9ca3af;color:#fff;text-align:center;font-weight:700">N/A</td>';
+                const c = statusCell(getDoc('funcionario',f.id,de.id),de);
+                return `<td style="background:${c.bg};color:${c.fg};text-align:center;font-weight:700">${c.txt}</td>`;
+              }).join('')}
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      `}
+
+      <div style="margin-top:24px;padding:12px;background:${temPendencia?'#fee2e2':'#dcfce7'};border-radius:6px;text-align:center;font-weight:700;font-size:16px;color:${temPendencia?'#991b1b':'#166534'}">
+        STATUS FINAL: ${temPendencia?'PENDENTE':'OK - CONFORME'}
+      </div>
+    </div>
+  `;
+}
+
+function exportarDevolutivaCSV(){
+  const rows = [];
+  document.querySelectorAll('#devolutivaEl table').forEach((tbl,ti)=>{
+    rows.push([ti===0?'EMPRESA':'COLABORADORES']);
+    [...tbl.querySelectorAll('tr')].forEach(tr=>rows.push([...tr.children].map(td=>td.innerText.replace(/\n/g,' ').trim())));
+    rows.push([]);
+  });
+  const csv = rows.map(r=>r.map(c=>`"${(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='devolutiva.csv'; a.click();
+}
+
+function enviarDevolutiva(obraId){
+  const obra = DB.obras.find(o=>o.id===obraId);
+  const dest = destinatariosObra(obraId);
+  const para = prompt('E-mail principal do cliente (Para):', '');
+  if(para===null) return;
+  const todos = [para,...dest.cc].filter(Boolean);
+  DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:todos.join('; '),assunto:`[B&M] Devolutiva Documentação - ${obra.nome}`,itens:1,enviadoPor:session.nome});
+  save();
+  toast(`Devolutiva enviada para ${todos.length} destinatário(s)`);
+}
+
+/* ===== UTILS ===== */
+function val(id){ const el=document.getElementById(id); return el?el.value.trim():''; }
+function atualizarDropLabel(input){
+  const lbl = document.getElementById('dropLabel');
+  if(lbl && input.files[0]) lbl.innerHTML = `<b style="color:var(--bm-blue)">✓ ${input.files[0].name}</b><br><span style="font-size:11px">${(input.files[0].size/1024).toFixed(0)} KB</span>`;
+}
+// drag-drop global
+document.addEventListener('dragover',e=>{
+  const dz = document.getElementById('dropZone');
+  if(!dz) return;
+  e.preventDefault(); dz.style.borderColor='var(--bm-blue)'; dz.style.background='#eef2f9';
+});
+document.addEventListener('dragleave',e=>{
+  const dz = document.getElementById('dropZone');
+  if(dz){ dz.style.borderColor='var(--border)'; dz.style.background='#f9fafb'; }
+});
+document.addEventListener('drop',e=>{
+  const dz = document.getElementById('dropZone');
+  if(!dz) return;
+  e.preventDefault();
+  dz.style.borderColor='var(--border)'; dz.style.background='#f9fafb';
+  const arq = document.getElementById('f_arq');
+  const f = e.dataTransfer?.files?.[0];
+  if(f && f.type==='application/pdf' && arq){
+    const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files;
+    atualizarDropLabel(arq);
+  } else if(f) toast('Apenas PDF aceito','err');
+});
+function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+let modalSaveFn=null, modalExtras=[];
+function showModal(title,body,saveFn,extras=[],readOnly=false,size=''){
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=body;
+  document.getElementById('modalEl').className='modal '+(size||'');
+  modalSaveFn=saveFn; modalExtras=extras;
+  let html=extras.map((b,i)=>`<button class="btn ${b.cls||'btn-secondary'}" onclick="modalExtra(${i})">${b.label}</button>`).join('');
+  html+=`<button class="btn btn-secondary" onclick="closeModal()">${readOnly?'Fechar':'Cancelar'}</button>`;
+  if(!readOnly && saveFn) html+=`<button class="btn btn-primary" onclick="modalSave()">Salvar</button>`;
+  document.getElementById('modalFooter').innerHTML=html;
+  document.getElementById('modal').classList.add('show');
+}
+function modalExtra(i){ modalExtras[i]?.fn(); }
+async function modalSave(){
+  if(!modalSaveFn) return;
+  const btns = document.querySelectorAll('#modalFooter .btn');
+  btns.forEach(b=>b.disabled=true);
+  try{
+    const result = await Promise.resolve(modalSaveFn());
+    if(result!==false) closeModal();
+  } finally {
+    btns.forEach(b=>b.disabled=false);
+  }
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); modalSaveFn=null; }
+function toast(msg,type){const t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
+
+/* ===== INIT ===== */
+load();
+aplicarTema();
+// logo no login
+if(DB.config.logoData){
+  const lg = document.querySelector('#loginScreen .logo');
+  lg.innerHTML = `<img src="${DB.config.logoData}" style="max-height:90px;margin-bottom:10px"><div style="font-size:18px;font-weight:700;color:var(--bm-blue);margin-top:6px">${DB.config.nomeEmpresa||''}</div><div style="font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:4px;font-weight:600;opacity:.7">ENGENHARIA E CONSTRUÇÕES</div>`;
+} else if(DB.config.nomeEmpresa && DB.config.nomeEmpresa!=='BRANDÃO & MARMO'){
+  const lg = document.querySelector('#loginScreen .logo .logo-name');
+  if(lg) lg.textContent = DB.config.nomeEmpresa;
+}
+</script>
+</body>
+</html>
