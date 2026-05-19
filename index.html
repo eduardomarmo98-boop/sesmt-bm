@@ -171,11 +171,6 @@
       <input id="loginPass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Entrar</button>
-    <div class="login-hint">
-      <b>Primeiro acesso (Diretoria):</b><br>
-      <code>diretoria@brandaoemarmo.com.br</code> / <code>admin</code><br>
-      <span style="color:var(--crit)">⚠ Altere a senha em Usuários após o primeiro login</span>
-    </div>
   </div>
 </div>
 
@@ -1064,10 +1059,10 @@ function editFuncionario(id){
         const p=document.getElementById('previewDocs');
         if(!p) return;
         if(!fid||!oid){ p.innerHTML='Selecione função e obra para ver a agregação.'; return; }
-        p.innerHTML=`<b>${todos.size} documentos exigidos</b> (${docsObra.size} da obra + ${docsFunc.size} da função, com sobreposição):<div style="margin-top:6px">${[...todos].map(id=>{const obraT=docsObra.has(id),funcT=docsFunc.has(id);const tag=obraT&&funcT?'🏗️🧑‍🔧':obraT?'🏗️':'🧑‍🔧';return `<span class="pill" title="${obraT?'Obra ':''}${funcT?'Função':''}">${tag} ${docNomes(id)}</span>`;}).join('')}</div>`;
+        p.innerHTML='<b>'+todos.size+' documentos exigidos</b> ('+docsObra.size+' da obra + '+docsFunc.size+' da função, com sobreposição):<div style="margin-top:6px">'+[...todos].map(function(id){var obraT=docsObra.has(id),funcT=docsFunc.has(id);var tag=obraT&&funcT?'OBRA+FUNC':obraT?'OBRA':'FUNC';return '<span class="pill" title="'+(obraT?'Obra ':'')+(funcT?'Função':'')+'">['+tag+'] '+docNomes(id)+'</span>';}).join('')+'</div>';
       }
       setTimeout(()=>{document.getElementById('f_funcao')?.addEventListener('change',atualizar);document.getElementById('f_obra')?.addEventListener('change',atualizar);atualizar();},50);
-    })();</script>
+    })();<\/script>
   `, ()=>{
     const data={nome:val('f_nome'),cpf:val('f_cpf'),funcaoId:parseInt(val('f_funcao'))||null,
       empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true};
