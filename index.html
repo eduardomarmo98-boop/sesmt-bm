@@ -703,58 +703,92 @@ async function analisarComGemini(file, docExigido, contexto){
   if(!file) return {iaStatus:'pendente', iaNota:'Sem arquivo para analisar.'};
 
   const checklist = docExigido.checklistIA || docExigido.descricao || '';
-  let prompt = `Você é analista RIGOROSO do SESMT (Saúde e Segurança do Trabalho) de uma construtora brasileira. Analise o PDF anexado, enviado como sendo o documento obrigatório: "${docExigido.nome}".
+  const prompt = `Voce e um analista SENIOR de SESMT (Saude e Seguranca do Trabalho) experiente, JUSTO e EQUILIBRADO, de uma construtora brasileira (Brandao & Marmo). Sua funcao e validar documentos enviados por empresas terceirizadas.
 
-═══════════════════════════════════════════
-DADOS CADASTRADOS NO SISTEMA (use OBRIGATORIAMENTE para validar identidade):
+DOCUMENTO ESPERADO: "${docExigido.nome}"
+
+CONTEXTO CADASTRADO NO SISTEMA:
 ${contexto}
-═══════════════════════════════════════════
 
-⚠️ REGRAS CRÍTICAS DE IDENTIDADE — REJEIÇÃO AUTOMÁTICA:
+${checklist ? 'CHECKLIST ESPECIFICO DA B&M PARA ESTE DOCUMENTO:\n'+checklist+'\n' : ''}
 
-1. NOME do colaborador/empresa no PDF DEVE ser idêntico (ou variação clara) ao cadastro. Se for OUTRA pessoa/empresa → STATUS "recusado".
-2. CPF/CNPJ no PDF DEVE bater com o cadastrado. Se diferente → STATUS "recusado".
-3. Se você não consegue ler nome ou CPF/CNPJ no PDF → STATUS "duvida" (revisão manual).
-4. Para documentos vinculados a função (NRs, ASO): a função/cargo no PDF deve ser compatível com a cadastrada.
+═══ PRINCIPIO BASICO ═══
+NA DUVIDA, MARQUE "duvida" PARA REVISAO HUMANA. NAO "recusado".
+SO "recusado" se houver problema CLARO e INSANAVEL.
+Voce deve ser JUSTO: documentos validos da vida real tem variacoes — aceite as razoaveis.
 
-VALIDAÇÕES GERAIS DO DOCUMENTO:
-- O PDF é REALMENTE do tipo "${docExigido.nome}"? Se for outro tipo de documento → "recusado".
-- Está legível e completo, sem cortes/borrões importantes?
-- Datas de emissão e validade estão visíveis?
+═══ VARIACOES QUE VOCE DEVE ACEITAR (NAO sao motivo de recusa) ═══
+- Acentuacao: "JOSE" = "JOSÉ", "MARCAO" = "MARÇÃO"
+- Abreviacoes: "Jr." = "Junior", "J." = "Jose", "Ma." = "Maria"
+- Sobrenome: ordem diferente, sobrenome composto, "de/da/dos" com ou sem
+- CPF/CNPJ: "123.456.789-00" = "12345678900", com ou sem formatacao
+- Maiusculas/minusculas
+- Espacos extras, traços, pontos
+- Qualidade de scan razoavel (mesmo um pouco borrado se da pra ler)
+- Diferenca de fonte/layout entre documentos
+- Carimbos/assinaturas em variacoes de cor/posicao
 
-${checklist ? '═══════════════════════════════════════════\nCHECKLIST ESPECÍFICO DA B&M (siga rigorosamente):\n'+checklist+'\n═══════════════════════════════════════════\n' : ''}
-INSTRUÇÕES DE CLASSIFICAÇÃO:
-• "aprovado": IDENTIDADE bate + tipo correto + todos itens do checklist OK.
-• "duvida": identidade OK e tipo OK, mas qualidade ruim/algum item faltando que precisa revisão humana.
-• "recusado": identidade NÃO bate, OU tipo de documento errado, OU ilegível, OU falta item crítico.
+═══ SO RECUSE ("recusado") QUANDO ═══
+1. NOME no PDF for de PESSOA COMPLETAMENTE DIFERENTE da cadastrada (nao apenas variacao)
+2. CPF/CNPJ tiver DIGITOS NUMERICOS diferentes (nao apenas formatacao)
+3. TIPO de documento for outro completamente (ex: enviaram CNH no lugar de ASO)
+4. Documento for FALSIFICADO, RASURADO, ou claramente fraudulento
+5. Estiver TAO ilegivel que e impossivel extrair qualquer dado
 
-⚠️ NA NOTA, SEJA EXTREMAMENTE DETALHADO (até 2000 caracteres):
-1. NOMES E DOCUMENTOS QUE VOCÊ LEU NO PDF: cite literalmente o nome do colaborador/empresa, CPF/CNPJ, função, datas, CRM do médico, número de ART, carga horária, etc. — tudo que você conseguir extrair.
-2. COMPARAÇÃO com o cadastro: diga explicitamente se nome/CPF/CNPJ do PDF bate ou não com o cadastrado.
-3. CHECKLIST: liste cada item do checklist e diga se foi atendido ou não.
-4. PROBLEMAS encontrados: cada problema em uma frase.
-5. Se "recusado", explique EXATAMENTE o que precisa ser corrigido para reenvio.
+═══ MARQUE "duvida" QUANDO ═══
+- Nao conseguir ler claramente nome ou CPF (mas o documento parece valido)
+- Algum item do checklist nao for confirmavel mas tambem nao for negado
+- Documento parece OK mas com qualidade ruim
+- Voce nao tem certeza absoluta — prefere revisao humana
 
-RESPONDA APENAS UM JSON PURO, SEM markdown, SEM \`\`\`, formato exato:
-{"status":"aprovado","nota":"texto detalhado aqui, com quebras de linha usando \\n"}`;
+═══ APROVE QUANDO ═══
+- Identidade bate (mesmo com variacoes toleraveis)
+- Tipo de documento confere
+- Checklist principal atendido
+- Documento legivel e completo
+
+OUTPUT: APENAS UM JSON PURO, SEM markdown, SEM backticks. Formato EXATO:
+{
+  "status": "aprovado",
+  "resumo": "uma frase curta resumindo a analise",
+  "leitura": {
+    "nome": "nome encontrado no PDF ou null",
+    "cpf_cnpj": "CPF/CNPJ encontrado no PDF (com formatacao) ou null",
+    "funcao": "funcao/cargo encontrado ou null",
+    "emissao": "data de emissao encontrada ou null",
+    "validade": "data de validade encontrada ou null",
+    "outros_dados": "outras informacoes relevantes (CRM, ART, nr horas, etc) ou null"
+  },
+  "comparacao": {
+    "nome_bate": "sim / nao / parcial / nao_visivel",
+    "cpf_cnpj_bate": "sim / nao / parcial / nao_visivel",
+    "funcao_compativel": "sim / nao / parcial / nao_aplicavel"
+  },
+  "checklist": [
+    {"item": "texto do item verificado", "atendido": true, "observacao": "detalhe opcional"}
+  ],
+  "divergencias": ["lista de problemas reais encontrados, ou vazia"],
+  "recomendacao": "se status != aprovado, o que fazer para corrigir; se aprovado, vazio"
+}`;
 
   try{
     const base64 = await fileToBase64(file);
+    const mimeType = file.type || 'application/pdf';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${DB.config.geminiModel||'gemini-2.0-flash'}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         contents:[{parts:[
-          {inline_data:{mime_type:'application/pdf',data:base64}},
+          {inline_data:{mime_type:mimeType, data:base64}},
           {text:prompt}
         ]}],
-        generationConfig:{temperature:0.05, maxOutputTokens:2000}
+        generationConfig:{temperature:0.15, maxOutputTokens:3000, responseMimeType:'application/json'}
       })
     });
     if(!res.ok){
       const err = await res.text();
-      return {iaStatus:'pendente', iaNota:`Erro Gemini ${res.status}: ${err.slice(0,150)}`};
+      return {iaStatus:'pendente', iaNota:`Erro Gemini ${res.status}: ${err.slice(0,200)}`};
     }
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -762,16 +796,58 @@ RESPONDA APENAS UM JSON PURO, SEM markdown, SEM \`\`\`, formato exato:
     let parsed;
     try{ parsed = JSON.parse(cleaned); }
     catch(e){
-      // tentar achar JSON no texto
       const m = cleaned.match(/\{[\s\S]*\}/);
-      if(m) parsed = JSON.parse(m[0]);
-      else return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato: '+cleaned.slice(0,150)};
+      if(m){ try{ parsed = JSON.parse(m[0]); }catch(e2){ return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON. Texto: '+cleaned.slice(0,300)}; } }
+      else return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON. Texto: '+cleaned.slice(0,300)};
     }
-    const status = ['aprovado','duvida','recusado'].includes(parsed.status) ? parsed.status : 'pendente';
-    return {iaStatus:status, iaNota:String(parsed.nota||'')};
+    const status = ['aprovado','duvida','recusado'].includes(parsed.status) ? parsed.status : 'duvida';
+    return {iaStatus:status, iaNota: formatarNotaIA(parsed)};
   } catch(e){
     return {iaStatus:'pendente', iaNota:'Falha ao chamar Gemini: '+e.message};
   }
+}
+
+function formatarNotaIA(p){
+  const linhas = [];
+  if(p.resumo) linhas.push('📋 RESUMO: '+p.resumo);
+  if(p.leitura){
+    linhas.push('');
+    linhas.push('🔍 DADOS LIDOS NO DOCUMENTO:');
+    const L = p.leitura;
+    if(L.nome) linhas.push('  • Nome: '+L.nome);
+    if(L.cpf_cnpj) linhas.push('  • CPF/CNPJ: '+L.cpf_cnpj);
+    if(L.funcao) linhas.push('  • Função/Cargo: '+L.funcao);
+    if(L.emissao) linhas.push('  • Emissão: '+L.emissao);
+    if(L.validade) linhas.push('  • Validade: '+L.validade);
+    if(L.outros_dados) linhas.push('  • Outros: '+L.outros_dados);
+  }
+  if(p.comparacao){
+    linhas.push('');
+    linhas.push('✓ COMPARAÇÃO COM CADASTRO:');
+    const C = p.comparacao;
+    const map = (v)=>({sim:'✅ confere',nao:'❌ DIVERGENTE',parcial:'⚠️ parcial',nao_visivel:'❓ não visível',nao_aplicavel:'— n/a'})[v]||v;
+    if(C.nome_bate) linhas.push('  • Nome: '+map(C.nome_bate));
+    if(C.cpf_cnpj_bate) linhas.push('  • CPF/CNPJ: '+map(C.cpf_cnpj_bate));
+    if(C.funcao_compativel) linhas.push('  • Função: '+map(C.funcao_compativel));
+  }
+  if(Array.isArray(p.checklist) && p.checklist.length){
+    linhas.push('');
+    linhas.push('📝 CHECKLIST DE VALIDAÇÃO:');
+    p.checklist.forEach(c=>{
+      const mark = c.atendido?'✅':'❌';
+      linhas.push('  '+mark+' '+c.item+(c.observacao?' — '+c.observacao:''));
+    });
+  }
+  if(Array.isArray(p.divergencias) && p.divergencias.length){
+    linhas.push('');
+    linhas.push('⚠️ DIVERGÊNCIAS / PROBLEMAS:');
+    p.divergencias.forEach(d=>linhas.push('  • '+d));
+  }
+  if(p.recomendacao){
+    linhas.push('');
+    linhas.push('💡 RECOMENDAÇÃO: '+p.recomendacao);
+  }
+  return linhas.join('\n');
 }
 
 /* ===== DASHBOARD ===== */
