@@ -5,6 +5,7 @@
 <title>SESMT B&M - Controle de Documentação</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bm-blue:#1a3d7c; --bm-orange:#e8a23a;
@@ -207,6 +208,11 @@
 </div>
 
 <script>
+/* ===== SUPABASE ===== */
+const SUPABASE_URL = 'https://vpaylafvhprihfrhqrax.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_UNOQ5DSb3xiZ9eIvIub8Fg_ENxPsYW3';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 /* ===== CONSTANTES ===== */
 const STORAGE_KEY = 'sesmt_bm_data_v7';
 const ROLES = {
@@ -226,20 +232,126 @@ let currentPage = 'dashboard';
 let filtros = {obraId:'',empresaId:'',status:'',busca:''};
 
 /* ===== STORAGE ===== */
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
+let _syncTimer = null;
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+  if(!session) return;
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(()=>syncToSupabase().catch(e=>{console.error('sync',e); toast('Erro ao salvar online: '+(e.message||e),'err');}), 400);
+}
 function load(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if(raw){ try{DB = JSON.parse(raw);}catch(e){seed();} }
-  else seed();
+  DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],logs:[],
+    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiModel:'gemini-2.0-flash',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#e8a23a'}};
+}
+
+async function loadFromSupabase(){
+  try{
+    const [us,cd,cf,em,ob,eo,fu,mq,dc,cfg,lg] = await Promise.all([
+      sb.from('usuarios').select('*'),
+      sb.from('catalogo_documentos').select('*'),
+      sb.from('catalogo_funcoes').select('*'),
+      sb.from('empresas').select('*'),
+      sb.from('obras').select('*'),
+      sb.from('empresa_obras').select('*'),
+      sb.from('funcionarios').select('*'),
+      sb.from('maquinas').select('*'),
+      sb.from('documentos').select('*'),
+      sb.from('config').select('*').eq('id',1).maybeSingle(),
+      sb.from('logs_email').select('*').order('data',{ascending:false}).limit(200)
+    ]);
+    DB.usuarios = (us.data||[]).map(u=>({id:u.id,email:u.email,nome:u.nome,tipo:u.tipo,empresaId:u.empresa_id,obraIds:u.obra_ids||[],naoApagar:u.nao_apagar}));
+    DB.catalogoDocs = (cd.data||[]).map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validadeDias:d.validade_dias,descricao:d.descricao,checklistIA:d.checklist_ia}));
+    DB.catalogoFuncoes = (cf.data||[]).map(f=>({id:f.id,nome:f.nome,docsIds:f.docs_ids||[]}));
+    const emObras = {}; (eo.data||[]).forEach(r=>{(emObras[r.empresa_id]=emObras[r.empresa_id]||[]).push(r.obra_id);});
+    DB.empresas = (em.data||[]).map(e=>({id:e.id,cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel,email:e.email,telefone:e.telefone,obraIds:emObras[e.id]||[]}));
+    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[]}));
+    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo}));
+    DB.maquinas = (mq.data||[]).map(m=>({id:m.id,empresaId:m.empresa_id,obraId:m.obra_id,descricao:m.descricao,patrimonio:m.patrimonio}));
+    DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
+    if(cfg.data){
+      const c = cfg.data;
+      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiModel:c.gemini_model||'gemini-2.0-flash',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#e8a23a'};
+    }
+    DB.logs = (lg.data||[]).map(l=>({data:new Date(l.data).toLocaleString('pt-BR'),para:l.para,cc:l.cc,assunto:l.assunto,itens:l.itens,enviadoPor:l.enviado_por,via:l.via}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+  }catch(e){ console.error('loadFromSupabase',e); toast('Erro ao carregar dados: '+(e.message||e),'err'); }
+}
+
+async function syncToSupabase(){
+  if(!session) return;
+  const c = DB.config;
+  await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_model:c.geminiModel||'gemini-2.0-flash', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#e8a23a'});
+  if(DB.catalogoDocs.length){
+    await sb.from('catalogo_documentos').upsert(DB.catalogoDocs.map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||''})));
+  }
+  for(const f of DB.catalogoFuncoes){
+    if(typeof f.id==='number' && f.id<1e9){
+      await sb.from('catalogo_funcoes').upsert({id:f.id,nome:f.nome,docs_ids:f.docsIds||[]});
+    } else {
+      const {data} = await sb.from('catalogo_funcoes').insert({nome:f.nome,docs_ids:f.docsIds||[]}).select().single();
+      if(data) f.id = data.id;
+    }
+  }
+  for(const o of DB.obras){
+    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[]};
+    if(typeof o.id==='number' && o.id<1e9){
+      await sb.from('obras').upsert({id:o.id,...row});
+    } else {
+      const {data} = await sb.from('obras').insert(row).select().single();
+      if(data) o.id = data.id;
+    }
+  }
+  for(const e of DB.empresas){
+    const row = {cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel||'',email:e.email,telefone:e.telefone||''};
+    if(typeof e.id==='number' && e.id<1e9){
+      await sb.from('empresas').upsert({id:e.id,...row});
+    } else {
+      const {data} = await sb.from('empresas').insert(row).select().single();
+      if(data) e.id = data.id;
+    }
+    await sb.from('empresa_obras').delete().eq('empresa_id',e.id);
+    if((e.obraIds||[]).length){
+      await sb.from('empresa_obras').insert(e.obraIds.map(oid=>({empresa_id:e.id,obra_id:oid})));
+    }
+  }
+  for(const f of DB.funcionarios){
+    const row = {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false};
+    if(typeof f.id==='number' && f.id<1e9){
+      await sb.from('funcionarios').upsert({id:f.id,...row});
+    } else {
+      const {data} = await sb.from('funcionarios').insert(row).select().single();
+      if(data) f.id = data.id;
+    }
+  }
+  for(const m of DB.maquinas){
+    const row = {empresa_id:m.empresaId,obra_id:m.obraId||null,descricao:m.descricao,patrimonio:m.patrimonio||''};
+    if(typeof m.id==='number' && m.id<1e9){
+      await sb.from('maquinas').upsert({id:m.id,...row});
+    } else {
+      const {data} = await sb.from('maquinas').insert(row).select().single();
+      if(data) m.id = data.id;
+    }
+  }
+  for(const d of DB.documentos){
+    const row = {ref_tipo:d.refTipo,ref_id:d.refId,obra_id:d.obraId||null,doc_id:d.docId,arquivo:d.arquivo||'',arquivo_path:d.arquivoPath||'',emitido_em:d.emitidoEm||null,validade:d.validade||null,ia_status:d.iaStatus||'pendente',ia_nota:d.iaNota||'',sesmt_status:d.sesmtStatus||'pendente',sesmt_motivo:d.sesmtMotivo||'',sesmt_por:d.sesmtPor||null};
+    if(typeof d.id==='number' && d.id<1e9){
+      await sb.from('documentos').upsert({id:d.id,...row});
+    } else {
+      const {data} = await sb.from('documentos').insert(row).select().single();
+      if(data) d.id = data.id;
+    }
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
 }
 function uid(){ return Date.now()+Math.floor(Math.random()*10000); }
 function hoje(){ return new Date().toISOString().slice(0,10); }
 function plusDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
-function seed(){
+function seed(){ /* seed local removido - dados vem do Supabase */ load(); }
+function _seedDESATIVADO(){
   DB = {
     usuarios:[
-      {id:1, email:'diretoria@brandaoemarmo.com.br', senha:'admin', nome:'Diretoria B&M', tipo:'diretoria', empresaId:null, obraIds:[], naoApagar:true}
+      {id:1, email:'OBSOLETO', senha:'OBSOLETO', nome:'OBSOLETO', tipo:'diretoria', empresaId:null, obraIds:[], naoApagar:true}
     ],
     catalogoDocs:[
       // EMPRESA
@@ -337,12 +449,16 @@ function seed(){
 }
 
 /* ===== LOGIN ===== */
-function doLogin(){
+async function doLogin(){
   const e = document.getElementById('loginUser').value.trim().toLowerCase();
   const p = document.getElementById('loginPass').value;
-  const u = DB.usuarios.find(x=>x.email.toLowerCase()===e && x.senha===p);
-  if(!u){ toast('E-mail ou senha inválidos','err'); return; }
-  session = u;
+  toast('Entrando...');
+  const {data:auth, error} = await sb.auth.signInWithPassword({email:e, password:p});
+  if(error){ toast('E-mail ou senha inválidos','err'); return; }
+  const {data:perfil, error:errP} = await sb.from('usuarios').select('*').eq('id', auth.user.id).maybeSingle();
+  if(errP || !perfil){ toast('Conta sem perfil. Contate o admin.','err'); await sb.auth.signOut(); return; }
+  session = {id:perfil.id, email:perfil.email, nome:perfil.nome, tipo:perfil.tipo, empresaId:perfil.empresa_id, obraIds:perfil.obra_ids||[], naoApagar:perfil.nao_apagar};
+  await loadFromSupabase();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
   // logo / nome no topbar
@@ -361,8 +477,8 @@ function doLogin(){
     fl.innerHTML = `<b style="color:var(--bm-blue)">${DB.config.nomeEmpresa||'B&M'}</b>`;
   }
   document.getElementById('footerYear').textContent = new Date().getFullYear();
-  document.getElementById('topUser').textContent = u.nome;
-  const role = ROLES[u.tipo];
+  document.getElementById('topUser').textContent = session.nome;
+  const role = ROLES[session.tipo];
   const rb = document.getElementById('topRole');
   rb.textContent = role.label;
   rb.className = 'badge-role '+role.badge;
@@ -370,7 +486,8 @@ function doLogin(){
   renderSidebar();
   go('dashboard');
 }
-function logout(){
+async function logout(){
+  await sb.auth.signOut();
   session=null;
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('appScreen').style.display='none';
@@ -1247,10 +1364,18 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     const nomeArq = arq?arq.name:(existing?.arquivo||'documento.pdf');
     if(!arq && !existing){ toast('Selecione um arquivo PDF','err'); return false; }
     let ia = {iaStatus:'pendente',iaNota:''};
-    let arquivoData = existing?.arquivoData||'';
+    let arquivoPath = existing?.arquivoPath||'';
     if(arq){
-      try{ arquivoData = await fileToBase64(arq); }
-      catch(e){ toast('Erro ao ler arquivo','err'); return false; }
+      const stamp = Date.now();
+      const safe = nomeArq.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,80);
+      arquivoPath = `${tipo}/${refId}/${docId}_${stamp}_${safe}`;
+      toast('Enviando arquivo...');
+      const {error:upErr} = await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:'application/pdf', upsert:true});
+      if(upErr){ toast('Erro ao subir PDF: '+upErr.message,'err'); return false; }
+      // remover arquivo antigo se existia outro path
+      if(existing?.arquivoPath && existing.arquivoPath !== arquivoPath){
+        sb.storage.from('documentos').remove([existing.arquivoPath]).catch(()=>{});
+      }
     }
     if(DB.config.iaHabilitada && arq){
       document.getElementById('iaLoading').style.display='block';
@@ -1259,19 +1384,21 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     } else if(existing && !arq) {
       ia = {iaStatus:existing.iaStatus, iaNota:existing.iaNota};
     }
-    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoData,emitidoEm:val('f_emit'),validade:validadeDias?val('f_val'):null,
+    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm:val('f_emit'),validade:validadeDias?val('f_val'):null,
       iaStatus:ia.iaStatus, iaNota:ia.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
-    try{ save(); }
-    catch(e){ toast('Erro: limite de storage atingido. Use Supabase em produção.','err'); return false; }
+    save();
     toast(`Documento enviado. IA: ${ia.iaStatus}${ia.iaNota?' — '+ia.iaNota.slice(0,80):''}`, ia.iaStatus==='recusado'?'err':ia.iaStatus==='duvida'?'warn':'');
     closeModal();
     go(currentPage);
     return true;
   });
 }
-function excluirDoc(docId){
+async function excluirDoc(docId){
   if(!confirm('Excluir este documento? Será possível reenviar depois.')) return;
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(d?.arquivoPath){ await sb.storage.from('documentos').remove([d.arquivoPath]).catch(()=>{}); }
+  if(d && typeof d.id==='number' && d.id<1e9){ await sb.from('documentos').delete().eq('id', d.id); }
   DB.documentos = DB.documentos.filter(d=>d.id!==docId);
   save(); toast('Documento excluído'); closeModal(); go(currentPage);
 }
@@ -1458,17 +1585,29 @@ function editUsuario(id){
       <label>Obras vinculadas</label>
       <div class="checkbox-list">${DB.obras.map(o=>`<label><input type="checkbox" name="f_obras" value="${o.id}" ${(u.obraIds||[]).includes(o.id)?'checked':''}>${o.nome}</label>`).join('')}</div>
     </div>
-  `, ()=>{
-    const data = {nome:val('f_nome'),email:val('f_email'),tipo:val('f_tipo'),obraIds:getChecked('f_obras').map(x=>parseInt(x)),empresaId:null};
+  `, async ()=>{
+    const data = {nome:val('f_nome'),email:val('f_email').toLowerCase(),tipo:val('f_tipo'),obraIds:getChecked('f_obras').map(x=>parseInt(x)),empresaId:null};
     const senha = val('f_senha');
     if(!data.nome||!data.email){ toast('Preencha','err'); return false; }
-    if(id){ Object.assign(u,data); if(senha) u.senha=senha; }
-    else {
-      if(!senha){ toast('Senha obrigatória','err'); return false; }
-      DB.usuarios.push({id:uid(),...data,senha});
+    if(id){
+      const {error} = await sb.from('usuarios').update({nome:data.nome, tipo:data.tipo, empresa_id:null, obra_ids:data.obraIds}).eq('id', u.id);
+      if(error){ toast('Erro: '+error.message,'err'); return false; }
+      Object.assign(u, data);
+      toast('Usuário atualizado');
+    } else {
+      if(!senha || senha.length<6){ toast('Senha obrigatória (mín. 6)','err'); return false; }
+      if(!confirm('Criar este usuário fará VOCÊ sair do sistema (Supabase troca a sessão). Deseja continuar?')) return false;
+      const {data:au, error} = await sb.auth.signUp({email:data.email, password:senha});
+      if(error){ toast('Erro: '+error.message,'err'); return false; }
+      const newId = au.user.id;
+      const {error:e2} = await sb.from('usuarios').insert({id:newId, email:data.email, nome:data.nome, tipo:data.tipo, empresa_id:null, obra_ids:data.obraIds, nao_apagar:false});
+      if(e2){ toast('Auth criado, mas perfil falhou: '+e2.message,'err'); return false; }
+      DB.usuarios.push({id:newId,...data,naoApagar:false});
+      toast('Usuário criado. Faça login novamente.');
+      setTimeout(()=>logout(), 1500);
     }
-    save(); go('usuarios'); toast('Usuário salvo'); return true;
-  }, id&&u.tipo!=='empresa'&&u.id!==session.id&&!u.naoApagar?[{label:'Excluir',cls:'btn-danger',fn:()=>{if(confirm('Excluir?')){DB.usuarios=DB.usuarios.filter(x=>x.id!==id);save();go('usuarios');closeModal();}}}]:[]);
+    go('usuarios'); return true;
+  }, id&&u.tipo!=='empresa'&&u.id!==session.id&&!u.naoApagar?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{if(confirm('Excluir?')){await sb.from('usuarios').delete().eq('id',id); DB.usuarios=DB.usuarios.filter(x=>x.id!==id);go('usuarios');closeModal();}}}]:[]);
 }
 
 /* ===== RELATÓRIOS ===== */
@@ -1834,12 +1973,15 @@ async function testarGemini(){
 }
 
 /* ===== DOWNLOAD INDIVIDUAL E EM MASSA ===== */
-function baixarDoc(docId){
+async function baixarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
-  if(!d||!d.arquivoData){ toast('Arquivo não disponível','err'); return; }
+  if(!d||!d.arquivoPath){ toast('Arquivo não disponível','err'); return; }
+  const {data, error} = await sb.storage.from('documentos').createSignedUrl(d.arquivoPath, 3600);
+  if(error){ toast('Erro ao gerar link: '+error.message,'err'); return; }
   const a = document.createElement('a');
-  a.href = 'data:application/pdf;base64,'+d.arquivoData;
+  a.href = data.signedUrl;
   a.download = d.arquivo||'documento.pdf';
+  a.target = '_blank';
   document.body.appendChild(a); a.click(); a.remove();
 }
 
@@ -1848,10 +1990,12 @@ function safeName(s){ return (s||'').replace(/[\\\/:*?"<>|]/g,'_').replace(/\s+/
 async function baixarZip(docs, nomeZip){
   if(typeof JSZip==='undefined'){ toast('JSZip não carregou','err'); return; }
   if(!docs.length){ toast('Nenhum arquivo para baixar','warn'); return; }
+  const validos = docs.filter(d=>d.arquivoPath);
+  if(validos.length===0){ toast('Nenhum arquivo no Storage','warn'); return; }
+  toast(`Baixando ${validos.length} arquivo(s)...`);
   const zip = new JSZip();
   let count = 0;
-  docs.forEach(d=>{
-    if(!d.arquivoData) return;
+  for(const d of validos){
     const exigido = DB.catalogoDocs.find(x=>x.id===d.docId);
     let pasta = '';
     if(d.refTipo==='empresa'){
@@ -1868,10 +2012,12 @@ async function baixarZip(docs, nomeZip){
       pasta = `MAQUINAS/${safeName(emp?.razao||'?')}/${safeName(m?.descricao||'?')}`;
     }
     const fileName = `${safeName(exigido?.nome||d.docId)}_${d.arquivo||'doc.pdf'}`;
-    zip.file(`${pasta}/${fileName}`, d.arquivoData, {base64:true});
+    const {data:blob, error} = await sb.storage.from('documentos').download(d.arquivoPath);
+    if(error||!blob){ console.error('download',d.arquivoPath,error); continue; }
+    zip.file(`${pasta}/${fileName}`, blob);
     count++;
-  });
-  if(count===0){ toast('Nenhum arquivo com PDF salvo','warn'); return; }
+  }
+  if(count===0){ toast('Falha ao baixar arquivos','err'); return; }
   toast(`Compactando ${count} arquivo(s)...`);
   const blob = await zip.generateAsync({type:'blob'});
   const a = document.createElement('a');
@@ -1882,7 +2028,7 @@ async function baixarZip(docs, nomeZip){
 }
 
 function renderDownloads(){
-  let docs = DB.documentos.filter(d=>d.arquivoData);
+  let docs = DB.documentos.filter(d=>d.arquivoPath);
   // aplicar escopo
   if(session.tipo==='empresa') docs = docs.filter(d=>{
     if(d.refTipo==='empresa') return d.refId===session.empresaId;
