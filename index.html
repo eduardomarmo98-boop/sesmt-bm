@@ -1596,15 +1596,14 @@ function editUsuario(id){
       toast('Usuário atualizado');
     } else {
       if(!senha || senha.length<6){ toast('Senha obrigatória (mín. 6)','err'); return false; }
-      if(!confirm('Criar este usuário fará VOCÊ sair do sistema (Supabase troca a sessão). Deseja continuar?')) return false;
-      const {data:au, error} = await sb.auth.signUp({email:data.email, password:senha});
-      if(error){ toast('Erro: '+error.message,'err'); return false; }
-      const newId = au.user.id;
-      const {error:e2} = await sb.from('usuarios').insert({id:newId, email:data.email, nome:data.nome, tipo:data.tipo, empresa_id:null, obra_ids:data.obraIds, nao_apagar:false});
-      if(e2){ toast('Auth criado, mas perfil falhou: '+e2.message,'err'); return false; }
-      DB.usuarios.push({id:newId,...data,naoApagar:false});
-      toast('Usuário criado. Faça login novamente.');
-      setTimeout(()=>logout(), 1500);
+      toast('Criando usuário...');
+      const {data:resp, error} = await sb.functions.invoke('criar-usuario', {
+        body: {email:data.email, password:senha, nome:data.nome, tipo:data.tipo, obraIds:data.obraIds}
+      });
+      if(error){ toast('Erro: '+(error.message||error),'err'); return false; }
+      if(resp?.error){ toast('Erro: '+resp.error,'err'); return false; }
+      DB.usuarios.push({id:resp.id,...data,naoApagar:false});
+      toast('Usuário criado com sucesso');
     }
     go('usuarios'); return true;
   }, id&&u.tipo!=='empresa'&&u.id!==session.id&&!u.naoApagar?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{if(confirm('Excluir?')){await sb.from('usuarios').delete().eq('id',id); DB.usuarios=DB.usuarios.filter(x=>x.id!==id);go('usuarios');closeModal();}}}]:[]);
