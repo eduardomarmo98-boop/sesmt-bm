@@ -165,11 +165,11 @@
     <div style="text-align:center;color:var(--muted);margin-bottom:20px;font-size:13px">Sistema SESMT — Controle de Documentação</div>
     <div class="form-group">
       <label>E-mail</label>
-      <input id="loginUser" type="email" placeholder="seu@email.com">
+      <input id="loginUser" name="email" autocomplete="username" type="email" placeholder="seu@email.com">
     </div>
     <div class="form-group">
       <label>Senha</label>
-      <input id="loginPass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
+      <input id="loginPass" name="password" autocomplete="current-password" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Entrar</button>
   </div>
@@ -264,7 +264,7 @@ async function loadFromSupabase(){
     DB.catalogoFuncoes = (cf.data||[]).map(f=>({id:f.id,nome:f.nome,docsIds:f.docs_ids||[]}));
     const emObras = {}; (eo.data||[]).forEach(r=>{(emObras[r.empresa_id]=emObras[r.empresa_id]||[]).push(r.obra_id);});
     DB.empresas = (em.data||[]).map(e=>({id:e.id,cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel,email:e.email,telefone:e.telefone,obraIds:emObras[e.id]||[]}));
-    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[]}));
+    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,sesmtId:o.sesmt_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[]}));
     DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo}));
     DB.maquinas = (mq.data||[]).map(m=>({id:m.id,empresaId:m.empresa_id,obraId:m.obra_id,descricao:m.descricao,patrimonio:m.patrimonio}));
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
@@ -293,7 +293,7 @@ async function syncToSupabase(){
     }
   }
   for(const o of DB.obras){
-    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[]};
+    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[]};
     if(typeof o.id==='number' && o.id<1e9){
       await sb.from('obras').upsert({id:o.id,...row});
     } else {
@@ -928,6 +928,9 @@ function editObra(id){
       <div class="form-group"><label>Coordenador</label>
         <select id="f_coord"><option value="">--</option>${coords.map(c=>`<option value="${c.id}" ${o.coordenadorId===c.id?'selected':''}>${c.nome}</option>`).join('')}</select>
       </div>
+      <div class="form-group"><label>Coordenador SESMT <span style="color:var(--crit)">*</span></label>
+        <select id="f_sesmt"><option value="">-- obrigatório --</option>${(DB.usuarios.filter(u=>['sesmt','diretoria'].includes(u.tipo))).map(s=>`<option value="${s.id}" ${o.sesmtId===s.id?'selected':''}>${s.nome}</option>`).join('')}</select>
+      </div>
       <div class="form-group"><label>Engenheiro Residente</label>
         <select id="f_eng"><option value="">--</option>${engs.map(e=>`<option value="${e.id}" ${o.engenheiroId===e.id?'selected':''}>${e.nome}</option>`).join('')}</select>
       </div>
@@ -958,7 +961,7 @@ function editObra(id){
   `, ()=>{
     const data = {
       nome:val('f_nome'),endereco:val('f_end'),
-      coordenadorId:parseInt(val('f_coord'))||null, engenheiroId:parseInt(val('f_eng'))||null, tstId:parseInt(val('f_tst'))||null,
+      coordenadorId:val('f_coord')||null, engenheiroId:val('f_eng')||null, tstId:val('f_tst')||null, sesmtId:val('f_sesmt')||null,
       clienteNome:val('f_cliente'), destinatariosExtras:val('f_destext'),
       ativa:document.getElementById('f_ativa').checked,
       docsEmpresa: getChecked('f_docs_empresa'),
@@ -1046,26 +1049,47 @@ function editEmpresa(id){
       </div>
     </div>
     <div class="alert info">A empresa fará login com o e-mail acima. Ela só poderá <b>enviar</b> documentos — quem define o que é exigido é o SESMT.</div>
-  `, ()=>{
-    const data = {cnpj:val('f_cnpj'),razao:val('f_razao'),responsavel:val('f_resp'),telefone:val('f_tel'),email:val('f_email'),obraIds:getChecked('f_obras_emp').map(x=>parseInt(x))};
+  `, async ()=>{
+    const data = {cnpj:val('f_cnpj'),razao:val('f_razao'),responsavel:val('f_resp'),telefone:val('f_tel'),email:val('f_email').toLowerCase(),obraIds:getChecked('f_obras_emp').map(x=>parseInt(x))};
     const senha = val('f_senha');
     if(!data.cnpj||!data.razao||!data.email){ toast('CNPJ, razão e e-mail obrigatórios','err'); return false; }
     if(id){
-      Object.assign(e,data);
-      if(userExistente){
-        userExistente.email = data.email; userExistente.nome = data.razao;
-        if(senha) userExistente.senha = senha;
-      } else {
-        if(!senha){ toast('Defina uma senha','err'); return false; }
-        DB.usuarios.push({id:uid(),email:data.email,senha,nome:data.razao,tipo:'empresa',empresaId:id,obraIds:[]});
+      // atualizar empresa direto no Supabase
+      const {error:errE} = await sb.from('empresas').update({cnpj:data.cnpj, razao:data.razao, responsavel:data.responsavel, email:data.email, telefone:data.telefone}).eq('id', id);
+      if(errE){ toast('Erro: '+errE.message,'err'); return false; }
+      // atualizar empresa_obras
+      await sb.from('empresa_obras').delete().eq('empresa_id', id);
+      if(data.obraIds.length){
+        await sb.from('empresa_obras').insert(data.obraIds.map(oid=>({empresa_id:id, obra_id:oid})));
       }
+      Object.assign(e, data);
+      if(userExistente && senha){ toast('Senha de usuário só pode ser alterada via "Esqueci minha senha"','warn'); }
     } else {
-      if(!senha){ toast('Senha obrigatória','err'); return false; }
-      const newId = uid();
-      DB.empresas.push({id:newId,...data,criadoEm:hoje()});
-      DB.usuarios.push({id:uid(),email:data.email,senha,nome:data.razao,tipo:'empresa',empresaId:newId,obraIds:[]});
+      if(!senha || senha.length<6){ toast('Senha obrigatória (mín. 6)','err'); return false; }
+      toast('Cadastrando empresa...');
+      // criar empresa
+      const {data:novaEmp, error:errIns} = await sb.from('empresas').insert({cnpj:data.cnpj,razao:data.razao,responsavel:data.responsavel,email:data.email,telefone:data.telefone}).select().single();
+      if(errIns){ toast('Erro ao criar empresa: '+errIns.message,'err'); return false; }
+      const newId = novaEmp.id;
+      // vincular obras
+      if(data.obraIds.length){
+        await sb.from('empresa_obras').insert(data.obraIds.map(oid=>({empresa_id:newId, obra_id:oid})));
+      }
+      // criar usuario tipo empresa via Edge Function
+      const {data:resp, error} = await sb.functions.invoke('criar-usuario', {
+        body:{email:data.email, password:senha, nome:data.razao, tipo:'empresa', empresaId:newId, obraIds:[]}
+      });
+      if(error||resp?.error){
+        // rollback empresa
+        await sb.from('empresas').delete().eq('id', newId);
+        toast('Erro ao criar login: '+(resp?.error||error.message),'err');
+        return false;
+      }
+      DB.empresas.push({id:newId,...data});
+      DB.usuarios.push({id:resp.id,email:data.email,nome:data.razao,tipo:'empresa',empresaId:newId,obraIds:[],naoApagar:false});
     }
-    save(); go('empresas'); toast('Empresa salva'); return true;
+    save(); go('empresas'); toast('Empresa salva com sucesso');
+    return true;
   });
 }
 
@@ -1302,7 +1326,7 @@ function dropOnRow(e,tipo,refId,docId,docNome,validadeDias,obraId){
   e.preventDefault(); e.currentTarget.style.background='';
   const f = e.dataTransfer?.files?.[0];
   if(!f){ return; }
-  if(f.type!=='application/pdf'){ toast('Apenas PDF','err'); return; }
+  if(!/(pdf|image\/(jpeg|jpg|png))/.test(f.type)){ toast('Apenas PDF ou imagem (jpg/png)','err'); return; }
   uploadDoc(tipo,refId,docId,docNome,validadeDias,obraId);
   setTimeout(()=>{
     const arq = document.getElementById('f_arq');
@@ -1346,7 +1370,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         <div style="font-size:30px;margin-bottom:4px">📎</div>
         <div id="dropLabel" style="color:var(--muted);font-size:13px"><b>Clique</b> ou <b>arraste o PDF</b> aqui</div>
       </div>
-      <input id="f_arq" type="file" accept=".pdf" style="display:none" onchange="atualizarDropLabel(this)">
+      <input id="f_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg" style="display:none" onchange="atualizarDropLabel(this)">
     </div>
     <div class="alert ${temGemini?'success':'info'}">
       ${temGemini ? '🤖 <b>Análise por IA ativa</b> — Gemini vai ler o PDF e validar automaticamente.' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
@@ -1370,7 +1394,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
       const safe = nomeArq.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,80);
       arquivoPath = `${tipo}/${refId}/${docId}_${stamp}_${safe}`;
       toast('Enviando arquivo...');
-      const {error:upErr} = await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:'application/pdf', upsert:true});
+      const {error:upErr} = await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:arq.type||'application/pdf', upsert:true});
       if(upErr){ toast('Erro ao subir PDF: '+upErr.message,'err'); return false; }
       // remover arquivo antigo se existia outro path
       if(existing?.arquivoPath && existing.arquivoPath !== arquivoPath){
@@ -2285,7 +2309,7 @@ document.addEventListener('drop',e=>{
   if(f && f.type==='application/pdf' && arq){
     const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files;
     atualizarDropLabel(arq);
-  } else if(f) toast('Apenas PDF aceito','err');
+  } else if(f && /(pdf|image)/.test(f.type)){ const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files; atualizarDropLabel(arq);} else if(f) toast('Apenas PDF ou imagem aceito','err');
 });
 function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 let modalSaveFn=null, modalExtras=[];
