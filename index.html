@@ -50,9 +50,14 @@
   .form-group{margin-bottom:16px}
   .login-hint{font-size:12px;color:var(--muted);margin-top:16px;padding:10px;background:#f9fafb;border-radius:6px}
   .filtros-box{background:#fff;border:1px solid var(--border);border-left:3px solid var(--bm-blue);border-radius:8px;padding:12px 14px;margin-bottom:14px}
-  .filtros-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .filtros-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:0}
   .filtros-row:last-child{margin-bottom:0}
   .filtros-row .label{font-size:12px;font-weight:600;color:var(--muted);min-width:90px;letter-spacing:.3px;text-transform:uppercase}
+  .filtro-item{display:flex;flex-direction:column;gap:4px;min-width:170px}
+  .filtro-lbl{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.3px;text-transform:uppercase;margin:0}
+  .filtro-select{padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:#fff;cursor:pointer;min-width:170px;max-width:260px}
+  .filtro-select:focus{outline:none;border-color:var(--bm-blue);box-shadow:0 0 0 3px rgba(26,61,124,.1)}
+  .filtro-actions{flex-direction:row;align-items:center;gap:8px;margin-left:auto}
   .pill-filter{display:inline-block;padding:5px 12px;border:1px solid var(--border);background:#f9fafb;color:var(--text);border-radius:18px;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
   .pill-filter:hover{border-color:var(--bm-blue);background:#eef2f9}
   .pill-filter.active{background:var(--bm-blue);color:#fff;border-color:var(--bm-blue);box-shadow:0 1px 3px rgba(26,61,124,.3)}
@@ -287,6 +292,8 @@ async function loadFromSupabase(){
     if(cfg.data){
       const c = cfg.data;
       DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiModel:c.gemini_model||'gemini-2.0-flash',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#e8a23a'};
+      // cache da marca para a tela de login (acessível antes do auth)
+      try{ localStorage.setItem('bm_branding', JSON.stringify({logoData:DB.config.logoData,nomeEmpresa:DB.config.nomeEmpresa,corPrimaria:DB.config.corPrimaria,corSecundaria:DB.config.corSecundaria})); }catch(e){}
     }
     DB.logs = (lg.data||[]).map(l=>({data:new Date(l.data).toLocaleString('pt-BR'),para:l.para,cc:l.cc,assunto:l.assunto,itens:l.itens,enviadoPor:l.enviado_por,via:l.via}));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
@@ -938,43 +945,51 @@ function renderDashboard(){
   `;
 }
 
-/* ===== TOOLBAR DE FILTROS ===== */
+/* ===== TOOLBAR DE FILTROS (dropdowns) ===== */
 function toolbarFiltros(opts={}){
   const obras = escopoObras();
   const emps = escopoEmpresas();
   const isEmpresa = session.tipo==='empresa';
   const temFiltro = filtros.obraId||filtros.empresaId||filtros.status||filtros.busca;
   let html = `<div class="filtros-box">`;
-  // Busca + Limpar
-  if(opts.busca!==false || temFiltro){
-    html += `<div class="filtros-row">`;
-    if(opts.busca!==false) html += `<input class="filtros-busca" id="ftBusca" placeholder="🔎 Buscar..." value="${filtros.busca||''}" oninput="filtros.busca=this.value;clearTimeout(window._fb);window._fb=setTimeout(()=>go('${currentPage}'),300)">`;
-    if(opts.actions) html += opts.actions;
-    if(temFiltro) html += `<button class="filtros-clear" onclick="filtros={obraId:'',empresaId:'',status:'',busca:''};go('${currentPage}')">✕ Limpar filtros</button>`;
-    html += `</div>`;
-  }
+  html += `<div class="filtros-row">`;
   // OBRA
   if(opts.obra && obras.length>=1){
-    html += `<div class="filtros-row"><span class="label">📍 Obra</span><div class="filtros-scroll">`;
-    html += `<button class="pill-filter ${!filtros.obraId?'active':''}" onclick="filtros.obraId='';go('${currentPage}')">Todas</button>`;
-    html += obras.map(o=>`<button class="pill-filter ${filtros.obraId==o.id?'active':''}" onclick="filtros.obraId='${o.id}';go('${currentPage}')">${o.nome}</button>`).join('');
-    html += `</div></div>`;
+    html += `<div class="filtro-item"><label class="filtro-lbl">📍 Obra</label>
+      <select class="filtro-select" onchange="filtros.obraId=this.value;go('${currentPage}')">
+        <option value="">Todas as obras</option>
+        ${obras.map(o=>`<option value="${o.id}" ${filtros.obraId==o.id?'selected':''}>${escapeHtml(o.nome)}</option>`).join('')}
+      </select></div>`;
   }
   // EMPRESA
   if(opts.empresa && !isEmpresa && emps.length>=1){
-    html += `<div class="filtros-row"><span class="label">🏢 Empresa</span><div class="filtros-scroll">`;
-    html += `<button class="pill-filter ${!filtros.empresaId?'active':''}" onclick="filtros.empresaId='';go('${currentPage}')">Todas</button>`;
-    html += emps.map(e=>`<button class="pill-filter ${filtros.empresaId==e.id?'active':''}" onclick="filtros.empresaId='${e.id}';go('${currentPage}')">${e.razao}</button>`).join('');
-    html += `</div></div>`;
+    html += `<div class="filtro-item"><label class="filtro-lbl">🏢 Empresa</label>
+      <select class="filtro-select" onchange="filtros.empresaId=this.value;go('${currentPage}')">
+        <option value="">Todas as empresas</option>
+        ${emps.map(e=>`<option value="${e.id}" ${filtros.empresaId==e.id?'selected':''}>${escapeHtml(e.razao)}</option>`).join('')}
+      </select></div>`;
   }
   // STATUS
   if(opts.status){
-    const sts = [['','Todos'],['ok','Em dia'],['warn','Vencendo'],['crit','Vencidos/Recusados'],['info','Aguardando SESMT'],['pendente','Não enviados']];
-    html += `<div class="filtros-row"><span class="label">📊 Status</span><div class="filtros-scroll">`;
-    html += sts.map(([v,l])=>{const act=filtros.status===v;const cls=act?(v?`active active-status-${v}`:'active'):''; return `<button class="pill-filter ${cls}" onclick="filtros.status='${v}';go('${currentPage}')">${l}</button>`;}).join('');
-    html += `</div></div>`;
+    const sts = [['','Todos os status'],['ok','Em dia'],['warn','Vencendo'],['crit','Vencidos/Recusados'],['info','Aguardando SESMT'],['pendente','Não enviados']];
+    html += `<div class="filtro-item"><label class="filtro-lbl">📊 Status</label>
+      <select class="filtro-select" onchange="filtros.status=this.value;go('${currentPage}')">
+        ${sts.map(([v,l])=>`<option value="${v}" ${filtros.status===v?'selected':''}>${l}</option>`).join('')}
+      </select></div>`;
   }
-  html += `</div>`;
+  // BUSCA
+  if(opts.busca!==false){
+    html += `<div class="filtro-item" style="flex:1;min-width:180px"><label class="filtro-lbl">🔎 Buscar</label>
+      <input class="filtro-select" id="ftBusca" placeholder="Digite para buscar..." value="${escapeHtml(filtros.busca||'')}" oninput="filtros.busca=this.value;clearTimeout(window._fb);window._fb=setTimeout(()=>go('${currentPage}'),300)"></div>`;
+  }
+  // AÇÕES + LIMPAR
+  if(opts.actions || temFiltro){
+    html += `<div class="filtro-item filtro-actions">`;
+    if(opts.actions) html += opts.actions;
+    if(temFiltro) html += `<button class="filtros-clear" onclick="filtros={obraId:'',empresaId:'',status:'',busca:''};go('${currentPage}')">✕ Limpar</button>`;
+    html += `</div>`;
+  }
+  html += `</div></div>`;
   return html;
 }
 
@@ -1065,7 +1080,15 @@ function editObra(id){
     if(!data.nome){ toast('Nome obrigatório','err'); return false; }
     if(id) Object.assign(o,data); else DB.obras.push({id:uid(),...data});
     save(); go('obras'); toast('Obra salva'); return true;
-  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{ if(confirm('Excluir obra?')){ DB.obras=DB.obras.filter(x=>x.id!==id); save(); go('obras'); closeModal(); }}}]:[], false, 'lg');
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{ if(!confirm('Excluir obra? Isso só funciona se NÃO houver colaboradores, máquinas ou empresas vinculadas. Caso contrário, marque a obra como Inativa.')) return;
+    // tenta deletar no banco primeiro
+    await sb.from('empresa_obras').delete().eq('obra_id', id);
+    const {error} = await sb.from('obras').delete().eq('id', id);
+    if(error){ toast('Não foi possível excluir: '+error.message+' — desvincule colaboradores/máquinas/empresas primeiro ou marque como Inativa.','err'); return; }
+    DB.obras = DB.obras.filter(x=>x.id!==id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+    toast('Obra excluída'); go('obras'); closeModal();
+  }}]:[], false, 'lg');
 }
 
 function checkboxesDocs(categoria, selecionados, name){
@@ -1184,7 +1207,31 @@ function editEmpresa(id){
     }
     save(); go('empresas'); toast('Empresa salva com sucesso');
     return true;
-  });
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{
+    if(!confirm('Excluir esta empresa? Todos os colaboradores, máquinas e documentos vinculados também serão removidos. Esta ação não pode ser desfeita.')) return;
+    // remove docs no storage
+    const docs = DB.documentos.filter(d=>{
+      if(d.refTipo==='empresa' && d.refId===id) return true;
+      const f = DB.funcionarios.find(ff=>ff.id===d.refId && d.refTipo==='funcionario');
+      const m = DB.maquinas.find(mm=>mm.id===d.refId && d.refTipo==='maquina');
+      return (f&&f.empresaId===id) || (m&&m.empresaId===id);
+    });
+    const paths = docs.map(d=>d.arquivoPath).filter(Boolean);
+    if(paths.length) sb.storage.from('documentos').remove(paths).catch(()=>{});
+    // apaga usuario tipo empresa
+    if(userExistente) await sb.from('usuarios').delete().eq('id', userExistente.id);
+    // CASCADE no banco apaga empresa_obras/funcionarios/maquinas (FK ON DELETE CASCADE)
+    await sb.from('documentos').delete().eq('ref_tipo','empresa').eq('ref_id', id);
+    const {error} = await sb.from('empresas').delete().eq('id', id);
+    if(error){ toast('Erro: '+error.message,'err'); return; }
+    DB.empresas = DB.empresas.filter(x=>x.id!==id);
+    DB.funcionarios = DB.funcionarios.filter(f=>f.empresaId!==id);
+    DB.maquinas = DB.maquinas.filter(m=>m.empresaId!==id);
+    DB.documentos = DB.documentos.filter(d=>!docs.includes(d));
+    if(userExistente) DB.usuarios = DB.usuarios.filter(u=>u.id!==userExistente.id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+    toast('Empresa excluída'); go('empresas'); closeModal();
+  }}]:[]);
 }
 
 function renderMinhaEmpresa(){
@@ -1302,9 +1349,27 @@ function editFuncionario(id){
     const data={nome:val('f_nome'),cpf:val('f_cpf'),funcaoId:parseInt(val('f_funcao'))||null,
       empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true};
     if(!data.nome||!data.cpf||!data.empresaId||!data.funcaoId){ toast('Preencha todos os campos','err'); return false; }
+    const isNovo = !id;
     if(id) Object.assign(f,data); else DB.funcionarios.push({id:uid(),...data});
-    save(); go('funcionarios'); toast('Colaborador salvo'); return true;
-  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{if(confirm('Excluir?')){DB.funcionarios=DB.funcionarios.filter(x=>x.id!==id);DB.documentos=DB.documentos.filter(d=>!(d.refTipo==='funcionario'&&d.refId===id));save();go('funcionarios');closeModal();}}}]:[]);
+    save(); go('funcionarios'); toast('Colaborador salvo');
+    // notifica WhatsApp quando NOVO colaborador é cadastrado (dispara coleta de docs)
+    if(isNovo) notificarWhatsApp('novo_pendente', {empresaId:data.empresaId, obraId:data.obraId, nomeColaborador:data.nome});
+    return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{if(!confirm('Excluir colaborador? Os documentos vinculados também serão removidos.')) return;
+    // apaga docs do storage (fire-and-forget)
+    const docsDoFunc = DB.documentos.filter(d=>d.refTipo==='funcionario'&&d.refId===id);
+    const paths = docsDoFunc.map(d=>d.arquivoPath).filter(Boolean);
+    if(paths.length) sb.storage.from('documentos').remove(paths).catch(()=>{});
+    // apaga documentos no banco
+    await sb.from('documentos').delete().eq('ref_tipo','funcionario').eq('ref_id', id);
+    // apaga funcionário
+    const {error} = await sb.from('funcionarios').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir: '+error.message,'err'); return; }
+    DB.funcionarios=DB.funcionarios.filter(x=>x.id!==id);
+    DB.documentos=DB.documentos.filter(d=>!(d.refTipo==='funcionario'&&d.refId===id));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+    toast('Colaborador excluído'); go('funcionarios'); closeModal();
+  }}]:[]);
 }
 
 /* ===== MÁQUINAS ===== */
@@ -1358,7 +1423,18 @@ function editMaquina(id){
     if(!data.descricao||!data.empresaId){ toast('Preencha','err'); return false; }
     if(id) Object.assign(m,data); else DB.maquinas.push({id:uid(),...data});
     save(); go('maquinas'); toast('Máquina salva'); return true;
-  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{if(confirm('Excluir?')){DB.maquinas=DB.maquinas.filter(x=>x.id!==id);DB.documentos=DB.documentos.filter(d=>!(d.refTipo==='maquina'&&d.refId===id));save();go('maquinas');closeModal();}}}]:[]);
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{if(!confirm('Excluir máquina? Os documentos vinculados também serão removidos.')) return;
+    const docsDaMaq = DB.documentos.filter(d=>d.refTipo==='maquina'&&d.refId===id);
+    const paths = docsDaMaq.map(d=>d.arquivoPath).filter(Boolean);
+    if(paths.length) sb.storage.from('documentos').remove(paths).catch(()=>{});
+    await sb.from('documentos').delete().eq('ref_tipo','maquina').eq('ref_id', id);
+    const {error} = await sb.from('maquinas').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir: '+error.message,'err'); return; }
+    DB.maquinas=DB.maquinas.filter(x=>x.id!==id);
+    DB.documentos=DB.documentos.filter(d=>!(d.refTipo==='maquina'&&d.refId===id));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+    toast('Máquina excluída'); go('maquinas'); closeModal();
+  }}]:[]);
 }
 
 /* ===== LISTA DE DOCS DE UMA REFERÊNCIA ===== */
@@ -1539,6 +1615,8 @@ function recusarDoc(docId){
     if(!motivo){ toast('Descreva o motivo','err'); return false; }
     d.sesmtStatus = 'recusado'; d.sesmtMotivo = motivo; d.sesmtPor = session.id;
     save(); toast('Documento recusado','warn'); closeModal(); go(currentPage);
+    // dispara WhatsApp para o responsável da empresa
+    notificarWhatsApp('doc_recusado', {documentoId: d.id});
     return true;
   });
 }
@@ -2441,17 +2519,29 @@ async function modalSave(){
 function closeModal(){ document.getElementById('modal').classList.remove('show'); modalSaveFn=null; }
 function toast(msg,type){const t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
 
+/* ===== WHATSAPP (fire-and-forget via Edge Function) ===== */
+async function notificarWhatsApp(evento, dados){
+  try{
+    await sb.functions.invoke('notificar-whatsapp', {body:{evento, dados}});
+  }catch(e){ console.warn('whatsapp',e); }
+}
+
 /* ===== INIT ===== */
 load();
 aplicarTema();
-// logo no login
-if(DB.config.logoData){
+// logo no login — lê da cache de branding (gravada após primeiro login bem-sucedido)
+(function setupLoginLogo(){
+  let branding = null;
+  try{ branding = JSON.parse(localStorage.getItem('bm_branding')||'null'); }catch(e){}
   const lg = document.querySelector('#loginScreen .logo');
-  lg.innerHTML = `<img src="${DB.config.logoData}" style="max-height:90px;margin-bottom:10px"><div style="font-size:18px;font-weight:700;color:var(--bm-blue);margin-top:6px">${DB.config.nomeEmpresa||''}</div><div style="font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:4px;font-weight:600;opacity:.7">ENGENHARIA E CONSTRUÇÕES</div>`;
-} else if(DB.config.nomeEmpresa && DB.config.nomeEmpresa!=='BRANDÃO & MARMO'){
-  const lg = document.querySelector('#loginScreen .logo .logo-name');
-  if(lg) lg.textContent = DB.config.nomeEmpresa;
-}
+  if(!lg) return;
+  if(branding && branding.logoData){
+    lg.innerHTML = `<img src="${branding.logoData}" style="max-height:90px;margin-bottom:10px" alt="${branding.nomeEmpresa||''}"><div style="font-size:18px;font-weight:700;color:var(--bm-blue);margin-top:6px">${branding.nomeEmpresa||''}</div><div style="font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:4px;font-weight:600;opacity:.7">ENGENHARIA E CONSTRUÇÕES</div>`;
+  } else if(branding && branding.nomeEmpresa && branding.nomeEmpresa!=='BRANDÃO & MARMO'){
+    const lgName = lg.querySelector('.logo-name');
+    if(lgName) lgName.textContent = branding.nomeEmpresa;
+  }
+})();
 </script>
 </body>
 </html>
