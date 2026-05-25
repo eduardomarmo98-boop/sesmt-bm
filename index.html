@@ -541,7 +541,22 @@ async function logout(){
 // Modal de cadastro do 2FA (primeira vez do usuário). Resolve true se enrolment OK.
 function mfaEnrolmentFlow(perfil){
   return new Promise(async (resolve)=>{
-    const {data, error} = await sb.auth.mfa.enroll({factorType:'totp', friendlyName:`SESMT - ${perfil.email}`, issuer:'SESMT B&M'});
+    // Limpa fatores pendentes/unverified de tentativas anteriores (evita
+    // "factor with friendly name already exists")
+    try{
+      const {data:atual} = await sb.auth.mfa.listFactors();
+      const todos = [...(atual?.totp||[]), ...(atual?.phone||[]), ...(atual?.all||[])];
+      const vistos = new Set();
+      for(const f of todos){
+        if(vistos.has(f.id)) continue; vistos.add(f.id);
+        if(f.status !== 'verified'){
+          await sb.auth.mfa.unenroll({factorId:f.id}).catch(()=>{});
+        }
+      }
+    }catch(e){ console.warn('limpeza fatores',e); }
+    // Friendly name único (timestamp) garante que não colide nem em casos exóticos
+    const friendly = `SESMT - ${perfil.email} - ${Date.now()}`;
+    const {data, error} = await sb.auth.mfa.enroll({factorType:'totp', friendlyName:friendly, issuer:'SESMT B&M'});
     if(error){ toast('Erro ao iniciar 2FA: '+error.message,'err'); return resolve(false); }
     const factorId = data.id;
     const qrSvg = data.totp.qr_code; // SVG inline
