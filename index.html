@@ -472,6 +472,9 @@ function _seedDESATIVADO(){
 }
 
 /* ===== LOGIN ===== */
+// Perfis que EXIGEM 2FA TOTP
+const TIPOS_MFA_OBRIGATORIO = ['diretoria','sesmt','tst'];
+
 async function doLogin(){
   const e = document.getElementById('loginUser').value.trim().toLowerCase();
   const p = document.getElementById('loginPass').value;
@@ -480,7 +483,24 @@ async function doLogin(){
   if(error){ toast('E-mail ou senha inválidos','err'); return; }
   const {data:perfil, error:errP} = await sb.from('usuarios').select('*').eq('id', auth.user.id).maybeSingle();
   if(errP || !perfil){ toast('Conta sem perfil. Contate o admin.','err'); await sb.auth.signOut(); return; }
-  session = {id:perfil.id, email:perfil.email, nome:perfil.nome, tipo:perfil.tipo, empresaId:perfil.empresa_id, obraIds:perfil.obra_ids||[], naoApagar:perfil.nao_apagar};
+  const perfilTmp = {id:perfil.id, email:perfil.email, nome:perfil.nome, tipo:perfil.tipo, empresaId:perfil.empresa_id, obraIds:perfil.obra_ids||[], naoApagar:perfil.nao_apagar};
+  // ========== FLUXO 2FA TOTP ==========
+  if(TIPOS_MFA_OBRIGATORIO.includes(perfilTmp.tipo)){
+    const {data:fatores} = await sb.auth.mfa.listFactors();
+    const totpVerificado = (fatores?.totp||[]).find(f=>f.status==='verified');
+    const {data:aalData} = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(!totpVerificado){
+      // Primeira vez: precisa configurar 2FA
+      const ok = await mfaEnrolmentFlow(perfilTmp);
+      if(!ok){ await sb.auth.signOut(); return; }
+    } else if(aalData?.currentLevel !== 'aal2'){
+      // Já configurou antes: pede o código
+      const ok = await mfaChallengeFlow(totpVerificado.id);
+      if(!ok){ await sb.auth.signOut(); return; }
+    }
+  }
+  // ===================================
+  session = perfilTmp;
   await loadFromSupabase();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
@@ -515,6 +535,105 @@ async function logout(){
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginUser').value=''; document.getElementById('loginPass').value='';
+}
+
+/* ===== 2FA (TOTP) ===== */
+// Modal de cadastro do 2FA (primeira vez do usuário). Resolve true se enrolment OK.
+function mfaEnrolmentFlow(perfil){
+  return new Promise(async (resolve)=>{
+    const {data, error} = await sb.auth.mfa.enroll({factorType:'totp', friendlyName:`SESMT - ${perfil.email}`, issuer:'SESMT B&M'});
+    if(error){ toast('Erro ao iniciar 2FA: '+error.message,'err'); return resolve(false); }
+    const factorId = data.id;
+    const qrSvg = data.totp.qr_code; // SVG inline
+    const secret = data.totp.secret; // pra entrada manual
+    showModal('🔐 Ativar Verificação em 2 Etapas', `
+      <div class="alert info" style="margin-bottom:14px">
+        Seu perfil (<b>${ROLES[perfil.tipo].label}</b>) exige autenticação em 2 etapas. Configure agora — leva 1 minuto.
+      </div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center;margin-bottom:14px">
+        <div style="background:#fff;padding:10px;border:1px solid var(--border);border-radius:8px">${qrSvg}</div>
+        <div style="font-size:13px;line-height:1.6">
+          <b>1.</b> Instale um app autenticador:<br>
+          • <b>Google Authenticator</b> (Android/iPhone)<br>
+          • <b>Microsoft Authenticator</b><br>
+          • <b>Authy</b><br><br>
+          <b>2.</b> Abra o app, toque "+", escolha "Ler QR Code" e aponte para o código ao lado.<br><br>
+          <b>3.</b> Ou cadastre manualmente:<br>
+          <code style="display:inline-block;background:#f3f4f6;padding:4px 8px;border-radius:4px;font-size:11px;margin-top:4px;word-break:break-all">${secret}</code>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Digite o código de 6 dígitos gerado pelo app</label>
+        <input id="f_totp" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code"
+          style="font-size:20px;text-align:center;letter-spacing:6px;font-family:monospace"
+          onkeydown="if(event.key==='Enter')modalSave()">
+      </div>
+      <div class="alert" style="font-size:12px">
+        ⚠️ <b>Importante:</b> sem esse app instalado você não conseguirá mais entrar. Se perder o celular, peça pra outro diretor resetar seu 2FA.
+      </div>
+    `, async ()=>{
+      const code = (val('f_totp')||'').replace(/\s/g,'');
+      if(!/^\d{6}$/.test(code)){ toast('Digite os 6 dígitos','err'); return false; }
+      const {error:vErr} = await sb.auth.mfa.challengeAndVerify({factorId, code});
+      if(vErr){
+        toast('Código inválido. Tente o próximo (muda a cada 30s).','err');
+        return false;
+      }
+      toast('2FA ativada com sucesso ✓');
+      resolve(true);
+      return true;
+    }, [], false, 'lg');
+    // Se o usuário fechar/cancelar, desistir do login
+    const origClose = window.closeModal;
+    window.closeModal = function(){
+      origClose();
+      window.closeModal = origClose;
+      // Se factor ficou pendente, removê-lo pra não atrapalhar próxima tentativa
+      sb.auth.mfa.unenroll({factorId}).catch(()=>{});
+      resolve(false);
+    };
+  });
+}
+
+// Modal pra digitar código (usuários que JÁ configuraram). Resolve true se OK.
+function mfaChallengeFlow(factorId){
+  return new Promise((resolve)=>{
+    showModal('🔐 Verificação em 2 Etapas', `
+      <div style="text-align:center;margin-bottom:14px;color:var(--muted);font-size:13px">
+        Abra seu app autenticador (Google Authenticator, Authy, etc.) e digite o código de 6 dígitos.
+      </div>
+      <div class="form-group">
+        <label>Código</label>
+        <input id="f_totp" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code"
+          style="font-size:24px;text-align:center;letter-spacing:8px;font-family:monospace"
+          onkeydown="if(event.key==='Enter')modalSave()">
+      </div>
+    `, async ()=>{
+      const code = (val('f_totp')||'').replace(/\s/g,'');
+      if(!/^\d{6}$/.test(code)){ toast('Digite os 6 dígitos','err'); return false; }
+      const {error} = await sb.auth.mfa.challengeAndVerify({factorId, code});
+      if(error){ toast('Código inválido. Tente o próximo.','err'); return false; }
+      resolve(true);
+      return true;
+    });
+    const origClose = window.closeModal;
+    window.closeModal = function(){
+      origClose();
+      window.closeModal = origClose;
+      resolve(false);
+    };
+    setTimeout(()=>document.getElementById('f_totp')?.focus(), 150);
+  });
+}
+
+// Chamada pela diretoria pelo botão "Resetar 2FA" no editUsuario
+async function resetarMfaUsuario(userId, nome){
+  if(!confirm(`Resetar a verificação em 2 etapas de ${nome}? Ele(a) precisará configurar de novo no próximo login.`)) return;
+  toast('Removendo 2FA...');
+  const {data, error} = await sb.functions.invoke('reset-mfa', {body:{userId}});
+  if(error || data?.error){ toast('Erro: '+(data?.error||error.message),'err'); return; }
+  toast('2FA resetada. Avise o usuário pra reconfigurar.');
+  closeModal();
 }
 
 /* ===== PERMISSÕES ===== */
@@ -1802,7 +1921,23 @@ function editUsuario(id){
       toast('Usuário criado com sucesso');
     }
     go('usuarios'); return true;
-  }, id&&u.tipo!=='empresa'&&u.id!==session.id&&!u.naoApagar?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{if(confirm('Excluir?')){await sb.from('usuarios').delete().eq('id',id); DB.usuarios=DB.usuarios.filter(x=>x.id!==id);go('usuarios');closeModal();}}}]:[]);
+  }, id?(function(){
+    const acoes = [];
+    // Resetar 2FA — só diretoria, só pra outros usuários do tipo que exige MFA
+    if(id && session.tipo==='diretoria' && u.id!==session.id && TIPOS_MFA_OBRIGATORIO.includes(u.tipo)){
+      acoes.push({label:'🔐 Resetar 2FA',cls:'btn-warn',fn:()=>resetarMfaUsuario(id, u.nome)});
+    }
+    // Excluir
+    if(u.tipo!=='empresa' && u.id!==session.id && !u.naoApagar){
+      acoes.push({label:'Excluir',cls:'btn-danger',fn:async ()=>{
+        if(!confirm('Excluir?')) return;
+        await sb.from('usuarios').delete().eq('id',id);
+        DB.usuarios=DB.usuarios.filter(x=>x.id!==id);
+        go('usuarios'); closeModal();
+      }});
+    }
+    return acoes;
+  })():[]);
 }
 
 /* ===== RELATÓRIOS ===== */
