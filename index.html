@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <title>SESMT B&M - Controle de Documentação</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- evita que o navegador guarde HTML em cache "para sempre" -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
+<meta name="app-version" content="2026.05.25.2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -172,9 +178,22 @@
   .badge-ia.pendente{background:#e5e7eb;color:#4b5563}
 
   .small-actions{display:flex;gap:4px}
+  /* banner de atualização */
+  #updateBar{display:none;position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,var(--bm-blue),var(--info));color:#fff;padding:10px 16px;text-align:center;font-size:13px;z-index:300;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+  #updateBar button{background:#fff;color:var(--bm-blue);padding:5px 14px;border-radius:6px;font-weight:700;margin-left:12px;border:none;cursor:pointer;font-size:12px}
+  #updateBar button:hover{background:#f0f4fb}
+  #updateBar .dismiss{background:transparent;color:#fff;opacity:.7;margin-left:6px;padding:5px 10px}
+  #updateBar .dismiss:hover{opacity:1;background:rgba(255,255,255,.1)}
 </style>
 </head>
 <body>
+
+<!-- BANNER DE ATUALIZAÇÃO (aparece quando detecta versão nova no GitHub) -->
+<div id="updateBar">
+  ✨ Uma nova versão do sistema está disponível.
+  <button onclick="aplicarAtualizacao()">Atualizar agora</button>
+  <button class="dismiss" onclick="document.getElementById('updateBar').style.display='none'">Mais tarde</button>
+</div>
 
 <!-- LOGIN -->
 <div id="loginScreen">
@@ -2676,10 +2695,39 @@ async function notificarWhatsApp(evento, dados){
   }catch(e){ console.warn('whatsapp',e); }
 }
 
+/* ===== AUTO-UPDATE (substitui o Ctrl+Shift+R) ===== */
+const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content || '?';
+let _versaoNova = null;
+
+async function checarAtualizacao(){
+  try{
+    const r = await fetch(window.location.pathname + '?cb=' + Date.now(), {cache:'no-store'});
+    if(!r.ok) return;
+    const html = await r.text();
+    const m = html.match(/<meta\s+name=["']app-version["']\s+content=["']([^"']+)["']/i);
+    if(!m) return;
+    const remota = m[1];
+    if(remota !== APP_VERSION){
+      _versaoNova = remota;
+      document.getElementById('updateBar').style.display = 'block';
+    }
+  }catch(e){}
+}
+
+function aplicarAtualizacao(){
+  if('caches' in window){
+    caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{});
+  }
+  window.location.href = window.location.pathname + '?v=' + (_versaoNova||Date.now());
+}
+
+setTimeout(checarAtualizacao, 3000);
+setInterval(checarAtualizacao, 5*60*1000);
+window.addEventListener('focus', checarAtualizacao);
+
 /* ===== INIT ===== */
 load();
 aplicarTema();
-// logo no login — lê da cache de branding (gravada após primeiro login bem-sucedido)
 (function setupLoginLogo(){
   let branding = null;
   try{ branding = JSON.parse(localStorage.getItem('bm_branding')||'null'); }catch(e){}
