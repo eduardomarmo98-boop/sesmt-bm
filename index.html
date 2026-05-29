@@ -2307,9 +2307,14 @@ function editUsuario(id){
     // Excluir
     if(u.tipo!=='empresa' && u.id!==session.id && !u.naoApagar){
       acoes.push({label:'Excluir',cls:'btn-danger',fn:async ()=>{
-        if(!confirm('Excluir?')) return;
-        await sb.from('usuarios').delete().eq('id',id);
+        if(!confirm('Excluir este usuário definitivamente? O login dele será removido por completo.')) return;
+        toast('Excluindo...');
+        const {data:resp, error} = await sb.functions.invoke('excluir-usuario', {body:{userId:id}});
+        if(error || (resp&&resp.error)){ toast('Erro: '+((resp&&resp.error)||error.message),'err'); return; }
         DB.usuarios=DB.usuarios.filter(x=>x.id!==id);
+        DB.obras.forEach(o=>{['coordenadorId','engenheiroId','tstId','sesmtId'].forEach(k=>{ if(o[k]===id) o[k]=null; });});
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+        if(resp&&resp.aviso) toast(resp.aviso,'warn'); else toast('Usuário excluído');
         go('usuarios'); closeModal();
       }});
     }
