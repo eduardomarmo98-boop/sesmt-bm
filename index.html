@@ -12,6 +12,8 @@
 <meta name="app-version" content="2026.05.25.2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root{
     --bm-blue:#1a3d7c; --bm-orange:#e8a23a;
@@ -263,7 +265,10 @@ const ROLES = {
   tst:{label:'TST',badge:'engenheiro'},
   cliente:{label:'CLIENTE',badge:'visualizador'},
   visualizador:{label:'VISUALIZADOR',badge:'visualizador'},
-  empresa:{label:'EMPRESA',badge:'empresa'}
+  empresa:{label:'EMPRESA',badge:'empresa'},
+  vigia:{label:'VIGIA / PORTARIA',badge:'coordenador'},
+  coord_sesmt:{label:'COORD. SESMT',badge:'sesmt'},
+  ti:{label:'TI',badge:'sesmt'}
 };
 
 let DB = null;
@@ -280,13 +285,13 @@ function save(){
   _syncTimer = setTimeout(()=>syncToSupabase().catch(e=>{console.error('sync',e); toast('Erro ao salvar online: '+(e.message||e),'err');}), 400);
 }
 function load(){
-  DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],logs:[],
+  DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],
     config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiModel:'gemini-2.0-flash',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#e8a23a'}};
 }
 
 async function loadFromSupabase(){
   try{
-    const [us,cd,cf,em,ob,eo,fu,mq,dc,cfg,lg] = await Promise.all([
+    const [us,cd,cf,em,ob,eo,fu,mq,dc,cfg,lg,ac] = await Promise.all([
       sb.from('usuarios').select('*'),
       sb.from('catalogo_documentos').select('*'),
       sb.from('catalogo_funcoes').select('*'),
@@ -297,15 +302,16 @@ async function loadFromSupabase(){
       sb.from('maquinas').select('*'),
       sb.from('documentos').select('*'),
       sb.from('config').select('*').eq('id',1).maybeSingle(),
-      sb.from('logs_email').select('*').order('data',{ascending:false}).limit(200)
+      sb.from('logs_email').select('*').order('data',{ascending:false}).limit(200),
+      sb.from('acessos').select('*').order('momento',{ascending:false}).limit(2000)
     ]);
     DB.usuarios = (us.data||[]).map(u=>({id:u.id,email:u.email,nome:u.nome,tipo:u.tipo,empresaId:u.empresa_id,obraIds:u.obra_ids||[],naoApagar:u.nao_apagar}));
     DB.catalogoDocs = (cd.data||[]).map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validadeDias:d.validade_dias,descricao:d.descricao,checklistIA:d.checklist_ia}));
     DB.catalogoFuncoes = (cf.data||[]).map(f=>({id:f.id,nome:f.nome,docsIds:f.docs_ids||[]}));
     const emObras = {}; (eo.data||[]).forEach(r=>{(emObras[r.empresa_id]=emObras[r.empresa_id]||[]).push(r.obra_id);});
     DB.empresas = (em.data||[]).map(e=>({id:e.id,cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel,email:e.email,telefone:e.telefone,obraIds:emObras[e.id]||[]}));
-    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,sesmtId:o.sesmt_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[]}));
-    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo}));
+    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,sesmtId:o.sesmt_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[],whatsappGrupo:o.whatsapp_grupo}));
+    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,qrToken:f.qr_token}));
     DB.maquinas = (mq.data||[]).map(m=>({id:m.id,empresaId:m.empresa_id,obraId:m.obra_id,descricao:m.descricao,patrimonio:m.patrimonio}));
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
@@ -315,6 +321,7 @@ async function loadFromSupabase(){
       try{ localStorage.setItem('bm_branding', JSON.stringify({logoData:DB.config.logoData,nomeEmpresa:DB.config.nomeEmpresa,corPrimaria:DB.config.corPrimaria,corSecundaria:DB.config.corSecundaria})); }catch(e){}
     }
     DB.logs = (lg.data||[]).map(l=>({data:new Date(l.data).toLocaleString('pt-BR'),para:l.para,cc:l.cc,assunto:l.assunto,itens:l.itens,enviadoPor:l.enviado_por,via:l.via}));
+    DB.acessos = ((ac && ac.data) ? ac.data : []).map(a=>({id:a.id,funcionarioId:a.funcionario_id,obraId:a.obra_id,tipo:a.tipo,momento:a.momento,status:a.status_no_momento,detalhe:a.detalhe,registradoPor:a.registrado_por}));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
   }catch(e){ console.error('loadFromSupabase',e); toast('Erro ao carregar dados: '+(e.message||e),'err'); }
 }
@@ -335,7 +342,7 @@ async function syncToSupabase(){
     }
   }
   for(const o of DB.obras){
-    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[]};
+    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null};
     if(typeof o.id==='number' && o.id<1e9){
       await sb.from('obras').upsert({id:o.id,...row});
     } else {
@@ -362,7 +369,7 @@ async function syncToSupabase(){
       await sb.from('funcionarios').upsert({id:f.id,...row});
     } else {
       const {data} = await sb.from('funcionarios').insert(row).select().single();
-      if(data) f.id = data.id;
+      if(data){ f.id = data.id; f.qrToken = data.qr_token; }
     }
   }
   for(const m of DB.maquinas){
@@ -492,7 +499,7 @@ function _seedDESATIVADO(){
 
 /* ===== LOGIN ===== */
 // Perfis que EXIGEM 2FA TOTP
-const TIPOS_MFA_OBRIGATORIO = ['diretoria','sesmt','tst'];
+const TIPOS_MFA_OBRIGATORIO = ['diretoria','ti','sesmt','coord_sesmt','tst'];
 
 async function doLogin(){
   const e = document.getElementById('loginUser').value.trim().toLowerCase();
@@ -546,7 +553,7 @@ async function doLogin(){
   rb.className = 'badge-role '+role.badge;
   filtros = {obraId:'',empresaId:'',status:'',busca:''};
   renderSidebar();
-  go('dashboard');
+  go(session.tipo==='vigia' ? 'portaria' : 'dashboard');
 }
 async function logout(){
   await sb.auth.signOut();
@@ -578,6 +585,7 @@ function mfaEnrolmentFlow(perfil){
     const {data, error} = await sb.auth.mfa.enroll({factorType:'totp', friendlyName:friendly, issuer:'SESMT B&M'});
     if(error){ toast('Erro ao iniciar 2FA: '+error.message,'err'); return resolve(false); }
     const factorId = data.id;
+    let verificado = false;
     const qrSvg = data.totp.qr_code; // SVG inline
     const secret = data.totp.secret; // pra entrada manual
     showModal('🔐 Ativar Verificação em 2 Etapas', `
@@ -613,6 +621,7 @@ function mfaEnrolmentFlow(perfil){
         toast('Código inválido. Tente o próximo (muda a cada 30s).','err');
         return false;
       }
+      verificado = true;
       toast('2FA ativada com sucesso ✓');
       resolve(true);
       return true;
@@ -622,8 +631,8 @@ function mfaEnrolmentFlow(perfil){
     window.closeModal = function(){
       origClose();
       window.closeModal = origClose;
-      // Se factor ficou pendente, removê-lo pra não atrapalhar próxima tentativa
-      sb.auth.mfa.unenroll({factorId}).catch(()=>{});
+      // So remove o fator se NAO foi verificado (cancelou). Se verificou, mantem pro proximo login.
+      if(!verificado){ sb.auth.mfa.unenroll({factorId}).catch(()=>{}); }
       resolve(false);
     };
   });
@@ -677,20 +686,23 @@ function pode(acao){
   // ações: 'config_docs','config_obra','aprovar_doc','enviar_doc','ver_tudo','gerir_usuarios','notificar'
   const p = {
     diretoria:['*'],
+    ti:['*'],
     sesmt:['*'],
-    coordenador:['ver_obra','enviar_doc','notificar'],
+    coord_sesmt:['*'],
+    coordenador:['ver_obra','enviar_doc','notificar','registrar_acesso'],
     engenheiro:['ver_obra','enviar_doc','notificar'],
-    tst:['ver_obra','enviar_doc','notificar','aprovar_doc'],
+    tst:['ver_obra','enviar_doc','notificar','aprovar_doc','registrar_acesso'],
     cliente:['ver_obra'],
     visualizador:['ver_obra'],
-    empresa:['enviar_doc','ver_propria']
+    empresa:['enviar_doc','ver_propria'],
+    vigia:['ver_obra','registrar_acesso']
   };
-  return p[t].includes('*') || p[t].includes(acao);
+  return (p[t]||[]).includes('*') || (p[t]||[]).includes(acao);
 }
 
 function escopoObras(){
   if(!session) return [];
-  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.obras;
+  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.obras;
   if(session.tipo==='empresa'){
     const emp = DB.empresas.find(e=>e.id===session.empresaId);
     return DB.obras.filter(o=>(emp?.obraIds||[]).includes(o.id));
@@ -700,7 +712,7 @@ function escopoObras(){
 function escopoEmpresas(){
   if(!session) return [];
   if(session.tipo==='empresa') return DB.empresas.filter(e=>e.id===session.empresaId);
-  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.empresas;
+  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.empresas;
   // coord/eng: empresas que têm gente nas suas obras
   const oids = session.obraIds;
   const eids = new Set();
@@ -711,13 +723,13 @@ function escopoEmpresas(){
 function escopoFuncionarios(){
   if(!session) return [];
   if(session.tipo==='empresa') return DB.funcionarios.filter(f=>f.empresaId===session.empresaId);
-  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.funcionarios;
+  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.funcionarios;
   return DB.funcionarios.filter(f=>session.obraIds.includes(f.obraId));
 }
 function escopoMaquinas(){
   if(!session) return [];
   if(session.tipo==='empresa') return DB.maquinas.filter(m=>m.empresaId===session.empresaId);
-  if(['diretoria','sesmt','visualizador'].includes(session.tipo)) return DB.maquinas;
+  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.maquinas;
   return DB.maquinas.filter(m=>session.obraIds.includes(m.obraId));
 }
 
@@ -732,7 +744,12 @@ function renderSidebar(){
       {id:'funcionarios',icon:'👷',label:'Meus Colaboradores'},
       {id:'maquinas',icon:'🚜',label:'Minhas Máquinas'}
     ];
-  } else if(t==='sesmt' || t==='diretoria'){
+  } else if(t==='vigia'){
+    nav = [
+      {id:'portaria',icon:'🛂',label:'Portaria'},
+      {id:'efetivo',icon:'📋',label:'Efetivo do Dia'}
+    ];
+  } else if(t==='sesmt' || t==='diretoria' || t==='coord_sesmt' || t==='ti'){
     nav = [
       {sec:'OPERAÇÃO'},
       {id:'dashboard',icon:'📊',label:'Dashboard'},
@@ -744,6 +761,9 @@ function renderSidebar(){
       {id:'downloads',icon:'⬇️',label:'Downloads'},
       {id:'relatorios',icon:'📑',label:'Relatórios'},
       {id:'notificacoes',icon:'✉️',label:'Notificações'},
+      {sec:'CONTROLE DE ACESSO'},
+      {id:'portaria',icon:'🛂',label:'Portaria'},
+      {id:'efetivo',icon:'📋',label:'Efetivo do Dia'},
       {sec:'CONFIGURAÇÃO'},
       {id:'catalogo_docs',icon:'📚',label:'Catálogo de Documentos'},
       {id:'catalogo_funcoes',icon:'🧑‍🔧',label:'Funções'},
@@ -761,6 +781,8 @@ function renderSidebar(){
       {id:'downloads',icon:'⬇️',label:'Downloads'},
       {id:'relatorios',icon:'📑',label:'Relatórios'}
     ];
+    if(pode('registrar_acesso')) nav.push({id:'portaria',icon:'🛂',label:'Portaria'});
+    nav.push({id:'efetivo',icon:'📋',label:'Efetivo do Dia'});
     if(t!=='visualizador') nav.push({id:'notificacoes',icon:'✉️',label:'Notificações'});
   }
   document.getElementById('sidebar').innerHTML = nav.map(n=>
@@ -777,10 +799,298 @@ function go(page){
     dashboard:renderDashboard, obras:renderObras, empresas:renderEmpresas, minha_empresa:renderMinhaEmpresa,
     funcionarios:renderFuncionarios, maquinas:renderMaquinas, relatorios:renderRelatorios,
     notificacoes:renderNotificacoes, catalogo_docs:renderCatalogoDocs, catalogo_funcoes:renderCatalogoFuncoes,
-    usuarios:renderUsuarios, config:renderConfig, devolutiva:renderDevolutiva, downloads:renderDownloads
+    usuarios:renderUsuarios, config:renderConfig, devolutiva:renderDevolutiva, downloads:renderDownloads,
+    portaria:renderPortaria, efetivo:renderEfetivo
   })[page];
+  if(typeof _scanner!=='undefined' && _scanner && page!=='portaria'){ try{pararScanner();}catch(e){} }
   if(fn) fn();
 }
+
+/* ===== CONTROLE DE ACESSO (PORTARIA / QR / EFETIVO) ===== */
+const QR_PREFIX = 'BM-';
+let _scanner = null;
+let _portaria = { obraId:null, modo:'entrada' };
+let _ultimaLeitura = 0;
+
+// Situacao do colaborador na portaria - reusa statusDoc/docsExigidos ja existentes
+function situacaoColaborador(func){
+  const exigidos = docsExigidosFuncionario(func);
+  const probs = [];
+  let okCount = 0;
+  exigidos.forEach(e=>{
+    const st = statusDoc(getDoc('funcionario', func.id, e.id), e);
+    if(st.cls==='ok') okCount++;
+    else probs.push({nome:e.nome, label:st.label, cls:st.cls});
+  });
+  const bloqueios = probs.filter(p=>p.cls!=='warn'); // crit/info/pendente = pendencia real; warn = so aviso
+  const liberado = bloqueios.length===0 && func.ativo!==false;
+  return { liberado, probs, bloqueios, okCount, total:exigidos.length, inativo:func.ativo===false };
+}
+
+function renderPortaria(){
+  const obras = escopoObras().filter(o=>o.ativa);
+  if(_portaria.obraId==null) _portaria.obraId = (obras[0] && obras[0].id) || null;
+  document.getElementById('main').innerHTML =
+    '<div class="page-header"><div><div class="page-title">Portaria - Controle de Acesso</div>'+
+    '<div class="page-sub">Aponte a camera para o QR Code do cracha do colaborador</div></div></div>'+
+    '<div class="card" style="max-width:560px;margin:0 auto">'+
+      '<div class="form-group"><label>Obra</label>'+
+        '<select id="portObra" onchange="_portaria.obraId=parseInt(this.value)||null">'+
+        obras.map(o=>'<option value="'+o.id+'" '+(_portaria.obraId===o.id?'selected':'')+'>'+escapeHtml(o.nome)+'</option>').join('')+
+        '</select></div>'+
+      '<div class="form-group"><label>Registrando</label>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button id="modoEntrada" class="pill-filter '+(_portaria.modo==='entrada'?'active':'')+'" style="flex:1" onclick="setModoPortaria(\'entrada\')">ENTRADA</button>'+
+          '<button id="modoSaida" class="pill-filter '+(_portaria.modo==='saida'?'active':'')+'" style="flex:1" onclick="setModoPortaria(\'saida\')">SAIDA</button>'+
+        '</div></div>'+
+      '<div id="leitor" style="width:100%;border-radius:10px;overflow:hidden;background:#000;min-height:200px"></div>'+
+      '<div style="display:flex;gap:8px;margin-top:10px">'+
+        '<button id="btnScan" class="btn btn-primary" style="flex:1" onclick="toggleScanner()">Ligar camera</button>'+
+        '<button class="btn btn-secondary" onclick="leituraManual()">Digitar codigo</button>'+
+      '</div>'+
+      '<div id="resultadoAcesso" style="margin-top:14px"></div>'+
+    '</div>';
+}
+
+function setModoPortaria(m){
+  _portaria.modo = m;
+  const a=document.getElementById('modoEntrada'); if(a) a.classList.toggle('active', m==='entrada');
+  const b=document.getElementById('modoSaida'); if(b) b.classList.toggle('active', m==='saida');
+}
+
+function toggleScanner(){
+  if(_scanner){ pararScanner(); return; }
+  if(typeof Html5Qrcode==='undefined'){ toast('A leitura por camera nao carregou. Use "Digitar codigo".','err'); return; }
+  _scanner = new Html5Qrcode('leitor');
+  _scanner.start({facingMode:'environment'}, {fps:10, qrbox:{width:220,height:220}},
+    txt=>onScan(txt), ()=>{})
+    .then(()=>{ const b=document.getElementById('btnScan'); if(b) b.textContent='Desligar camera'; })
+    .catch(e=>{ toast('Nao consegui abrir a camera: '+(e.message||e),'err'); _scanner=null; });
+}
+function pararScanner(){
+  if(!_scanner) return;
+  const sc=_scanner; _scanner=null;
+  sc.stop().then(()=>{ try{sc.clear();}catch(e){} }).catch(()=>{});
+  const b=document.getElementById('btnScan'); if(b) b.textContent='Ligar camera';
+}
+
+function onScan(txt){
+  const agora = Date.now();
+  if(agora - _ultimaLeitura < 2500) return; // evita ler o mesmo cracha varias vezes seguidas
+  _ultimaLeitura = agora;
+  processarCodigo(txt);
+}
+function leituraManual(){
+  const c = prompt('Codigo do cracha:');
+  if(c) processarCodigo(String(c).trim());
+}
+
+function processarCodigo(txt){
+  let token = String(txt||'').trim();
+  if(token.indexOf(QR_PREFIX)===0) token = token.slice(QR_PREFIX.length);
+  const box = document.getElementById('resultadoAcesso');
+  const func = DB.funcionarios.find(f=>f.qrToken===token);
+  if(!func){
+    if(box) box.innerHTML = '<div style="border:3px solid #f59e0b;border-radius:12px;padding:16px;text-align:center"><div style="font-size:22px;font-weight:800;color:#b45309">QR NAO RECONHECIDO</div><div style="color:var(--muted);font-size:13px;margin-top:6px">Esse cracha nao e deste sistema ou o colaborador foi removido.</div></div>';
+    try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){}
+    return;
+  }
+  const sit = situacaoColaborador(func);
+  const emp = DB.empresas.find(e=>e.id===func.empresaId);
+  const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
+  registrarAcesso(func, sit);
+  const cor = sit.liberado ? '#16a34a' : '#dc2626';
+  const titulo = sit.inativo ? 'COLABORADOR INATIVO' : (sit.liberado ? 'LIBERADO' : 'ATENCAO - PENDENCIA');
+  let det = '';
+  if(sit.bloqueios.length){
+    det = '<div style="margin-top:10px;text-align:left"><b>Pendencias:</b><ul style="margin:6px 0 0 18px;padding:0">'+
+      sit.bloqueios.map(p=>'<li>'+escapeHtml(p.nome)+' - '+escapeHtml(p.label)+'</li>').join('')+'</ul></div>';
+  } else if(sit.probs.length){
+    det = '<div style="margin-top:8px;text-align:left;color:#b45309;font-size:13px"><b>Atencao (ainda valido):</b> '+
+      sit.probs.map(p=>escapeHtml(p.nome)+' ('+escapeHtml(p.label)+')').join(', ')+'</div>';
+  }
+  if(box) box.innerHTML =
+    '<div style="border:3px solid '+cor+';border-radius:12px;padding:16px;text-align:center">'+
+      '<div style="font-size:28px;font-weight:800;color:'+cor+'">'+titulo+'</div>'+
+      '<div style="font-size:20px;font-weight:700;margin-top:6px">'+escapeHtml(func.nome)+'</div>'+
+      '<div style="color:var(--muted);font-size:13px">'+escapeHtml((funcao&&funcao.nome)||'-')+' - '+escapeHtml((emp&&emp.razao)||'-')+'</div>'+
+      '<div style="margin-top:6px;font-size:13px">Registrado: <b>'+(_portaria.modo==='entrada'?'ENTRADA':'SAIDA')+'</b> as '+new Date().toLocaleTimeString('pt-BR')+'</div>'+
+      det+
+    '</div>';
+  try{ if(navigator.vibrate) navigator.vibrate(sit.liberado?80:[120,60,120]); }catch(e){}
+}
+
+async function registrarAcesso(func, sit){
+  const reg = {
+    funcionario_id: func.id,
+    obra_id: func.obraId || _portaria.obraId || null,
+    tipo: _portaria.modo,
+    status_no_momento: sit.liberado ? 'liberado' : 'pendencia',
+    detalhe: sit.liberado ? '' : sit.bloqueios.map(p=>p.nome+': '+p.label).join(' | '),
+    registrado_por: session.id
+  };
+  const local = {id:'tmp'+Date.now(), funcionarioId:reg.funcionario_id, obraId:reg.obra_id, tipo:reg.tipo, momento:new Date().toISOString(), status:reg.status_no_momento, detalhe:reg.detalhe, registradoPor:session.id};
+  if(!DB.acessos) DB.acessos=[];
+  DB.acessos.unshift(local);
+  try{
+    const {data, error} = await sb.from('acessos').insert(reg).select().single();
+    if(error) throw error;
+    if(data){ local.id=data.id; local.momento=data.momento; }
+  }catch(e){ console.error('acesso', e); toast('Registrado no aparelho, mas falhou online: '+(e.message||e),'err'); }
+}
+
+/* ===== EFETIVO DIARIO ===== */
+function renderEfetivo(){
+  const obras = escopoObras();
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  if(_portaria.obraId==null && obras[0]) _portaria.obraId = obras[0].id;
+  const dia = filtros._dia || hoje();
+  const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
+  let acc = DB.acessos.filter(a=>String(a.momento||'').slice(0,10)===dia);
+  if(obraSel) acc = acc.filter(a=>String(a.obraId)===String(obraSel));
+  acc.sort((a,b)=> (a.momento<b.momento?-1:1));
+  const porFunc = {};
+  acc.forEach(a=>{ (porFunc[a.funcionarioId]=porFunc[a.funcionarioId]||[]).push(a); });
+  const dentro = []; const entraram = new Set();
+  Object.keys(porFunc).forEach(fid=>{
+    entraram.add(fid);
+    const evs = porFunc[fid];
+    if(evs[evs.length-1].tipo==='entrada') dentro.push(fid);
+  });
+  const pendHoje = acc.filter(a=>a.tipo==='entrada' && a.status==='pendencia');
+  const nomeFunc = fid=>{const f=DB.funcionarios.find(x=>String(x.id)===String(fid));return f?f.nome:'#'+fid;};
+  const empFunc = fid=>{const f=DB.funcionarios.find(x=>String(x.id)===String(fid));const e=f&&DB.empresas.find(x=>x.id===f.empresaId);return e?e.razao:'-';};
+  const funcaoFunc = fid=>{const f=DB.funcionarios.find(x=>String(x.id)===String(fid));const c=f&&DB.catalogoFuncoes.find(x=>x.id==f.funcaoId);return c?c.nome:'-';};
+  const porEmp = {}; entraram.forEach(fid=>{ const e=empFunc(fid); porEmp[e]=(porEmp[e]||0)+1; });
+  const stat = (num,label,cor)=>'<div class="card" style="text-align:center;padding:14px"><div style="font-size:30px;font-weight:800;'+(cor?'color:'+cor:'')+'">'+num+'</div><div style="color:var(--muted);font-size:12px">'+label+'</div></div>';
+  document.getElementById('main').innerHTML =
+    '<div class="page-header"><div><div class="page-title">Efetivo do Dia</div><div class="page-sub">Entradas e saidas registradas na portaria</div></div>'+
+      (pode('*')?'<button class="btn btn-primary" style="margin-right:6px" onclick="enviarEfetivoGrupoAgora()">Enviar ao grupo agora</button>':'')+'<button class="btn btn-secondary" onclick="exportarEfetivoCSV()">Exportar CSV</button></div>'+
+    '<div class="filtros-box"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'+
+      '<label style="font-size:13px">Dia <input type="date" value="'+dia+'" onchange="filtros._dia=this.value;renderEfetivo()" style="margin-left:6px"></label>'+
+      '<label style="font-size:13px">Obra <select onchange="filtros._efObra=this.value;renderEfetivo()" style="margin-left:6px;max-width:260px">'+
+        (podeTodas?'<option value="">Todas</option>':'')+
+        obras.map(o=>'<option value="'+o.id+'" '+(String(obraSel)===String(o.id)?'selected':'')+'>'+escapeHtml(o.nome)+'</option>').join('')+
+      '</select></label>'+
+    '</div></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">'+
+      stat(dentro.length,'Dentro agora','')+
+      stat(entraram.size,'Entraram no dia','')+
+      stat(pendHoje.length,'Entradas com pendencia',pendHoje.length?'#dc2626':'')+
+      stat(acc.length,'Movimentos no dia','')+
+    '</div>'+
+    (pendHoje.length?
+      '<div class="card" style="border-left:4px solid #dc2626;margin-bottom:14px"><b style="color:#dc2626">Entradas com pendencia hoje</b>'+
+      '<table style="margin-top:8px"><thead><tr><th>Hora</th><th>Colaborador</th><th>Empresa</th><th>Pendencia</th></tr></thead><tbody>'+
+      pendHoje.map(a=>'<tr><td>'+new Date(a.momento).toLocaleTimeString('pt-BR')+'</td><td>'+escapeHtml(nomeFunc(a.funcionarioId))+'</td><td>'+escapeHtml(empFunc(a.funcionarioId))+'</td><td style="font-size:12px">'+escapeHtml(a.detalhe||'-')+'</td></tr>').join('')+
+      '</tbody></table></div>':'')+
+    '<div class="grid-2" style="gap:14px">'+
+      '<div class="card"><b>Dentro agora ('+dentro.length+')</b><table style="margin-top:8px"><thead><tr><th>Colaborador</th><th>Funcao</th><th>Empresa</th></tr></thead><tbody>'+
+      (dentro.map(fid=>'<tr><td>'+escapeHtml(nomeFunc(fid))+'</td><td>'+escapeHtml(funcaoFunc(fid))+'</td><td>'+escapeHtml(empFunc(fid))+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--muted)">Ninguem dentro</td></tr>')+
+      '</tbody></table></div>'+
+      '<div class="card"><b>Por empresa (entraram)</b><table style="margin-top:8px"><thead><tr><th>Empresa</th><th>Qtd</th></tr></thead><tbody>'+
+      (Object.keys(porEmp).map(e=>'<tr><td>'+escapeHtml(e)+'</td><td>'+porEmp[e]+'</td></tr>').join('')||'<tr><td colspan="2" style="color:var(--muted)">-</td></tr>')+
+      '</tbody></table></div>'+
+    '</div>'+
+    '<div class="card" style="margin-top:14px"><b>Movimentos do dia</b><table style="margin-top:8px"><thead><tr><th>Hora</th><th>Colaborador</th><th>Empresa</th><th>Tipo</th><th>Situacao</th></tr></thead><tbody>'+
+      (acc.slice().reverse().map(a=>'<tr><td>'+new Date(a.momento).toLocaleTimeString('pt-BR')+'</td><td>'+escapeHtml(nomeFunc(a.funcionarioId))+'</td><td>'+escapeHtml(empFunc(a.funcionarioId))+'</td><td>'+(a.tipo==='entrada'?'Entrada':'Saida')+'</td><td>'+(a.status==='pendencia'?'<span style="color:#dc2626">Pendencia</span>':'<span style="color:#16a34a">OK</span>')+'</td></tr>').join('')||'<tr><td colspan="5" style="color:var(--muted)">Nenhum movimento neste dia</td></tr>')+
+    '</tbody></table></div>';
+}
+
+function exportarEfetivoCSV(){
+  const dia = filtros._dia || hoje();
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
+  let acc = DB.acessos.filter(a=>String(a.momento||'').slice(0,10)===dia);
+  if(obraSel) acc = acc.filter(a=>String(a.obraId)===String(obraSel));
+  acc.sort((a,b)=>(a.momento<b.momento?-1:1));
+  const linhas = [['Data/Hora','Colaborador','CPF','Empresa','Funcao','Obra','Tipo','Situacao','Detalhe']];
+  acc.forEach(a=>{
+    const f=DB.funcionarios.find(x=>String(x.id)===String(a.funcionarioId));
+    const e=f&&DB.empresas.find(x=>x.id===f.empresaId);
+    const c=f&&DB.catalogoFuncoes.find(x=>x.id==f.funcaoId);
+    const o=DB.obras.find(x=>String(x.id)===String(a.obraId));
+    linhas.push([new Date(a.momento).toLocaleString('pt-BR'), (f&&f.nome)||'', (f&&f.cpf)||'', (e&&e.razao)||'', (c&&c.nome)||'', (o&&o.nome)||'', a.tipo, a.status||'', String(a.detalhe||'').replace(/\n/g,' ')]);
+  });
+  const csv = linhas.map(l=>l.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='efetivo_'+dia+'.csv'; a.click();
+}
+
+/* ===== CRACHA / QR DO COLABORADOR ===== */
+function crachaFuncionario(id){
+  const f = DB.funcionarios.find(x=>x.id===id);
+  if(!f){ toast('Colaborador nao encontrado','err'); return; }
+  if(!f.qrToken){ toast('Este colaborador ainda nao tem QR gerado. Recarregue a pagina (Ctrl+Shift+R) e tente de novo.','warn'); return; }
+  const emp = DB.empresas.find(e=>e.id===f.empresaId);
+  const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
+  const obra = DB.obras.find(o=>o.id===f.obraId);
+  const azul = (DB.config && DB.config.corPrimaria) || '#1a3d7c';
+  showModal('Cracha / QR Code',
+    '<div id="crachaArea" style="display:flex;justify-content:center">'+
+      '<div style="width:300px;border:1px solid #ddd;border-radius:12px;overflow:hidden;font-family:Arial,sans-serif">'+
+        '<div style="background:'+azul+';color:#fff;padding:10px 14px;font-weight:700;font-size:13px">'+escapeHtml((DB.config&&DB.config.nomeEmpresa)||'BRANDAO & MARMO')+' - SESMT</div>'+
+        '<div style="padding:16px;text-align:center">'+
+          '<div id="qrBox" style="display:flex;justify-content:center;margin-bottom:10px"></div>'+
+          '<div style="font-size:17px;font-weight:700">'+escapeHtml(f.nome)+'</div>'+
+          '<div style="color:#555;font-size:13px">'+escapeHtml((funcao&&funcao.nome)||'-')+'</div>'+
+          '<div style="color:#555;font-size:13px">'+escapeHtml((emp&&emp.razao)||'-')+'</div>'+
+          '<div style="color:#888;font-size:12px;margin-top:4px">CPF: '+escapeHtml(f.cpf||'-')+'</div>'+
+          (obra?'<div style="color:#888;font-size:12px">Obra: '+escapeHtml(obra.nome)+'</div>':'')+
+        '</div>'+
+      '</div>'+
+    '</div>',
+    null, [{label:'Imprimir', cls:'btn-primary', fn:function(){ imprimirCracha(); }}], true);
+  setTimeout(function(){
+    const box=document.getElementById('qrBox'); if(!box) return;
+    if(typeof QRCode==='undefined'){ box.innerHTML='<div style="color:#dc2626;font-size:12px">Biblioteca de QR nao carregou. Recarregue a pagina.</div>'; return; }
+    box.innerHTML='';
+    new QRCode(box, {text:QR_PREFIX+f.qrToken, width:170, height:170, correctLevel:QRCode.CorrectLevel.M});
+  }, 80);
+}
+function imprimirCracha(){
+  const area = document.getElementById('crachaArea'); if(!area) return;
+  const w = window.open('', '_blank', 'width=380,height=560');
+  if(!w){ toast('Permita pop-ups para imprimir','warn'); return; }
+  w.document.write('<html><head><title>Cracha</title></head><body style="margin:0;padding:20px;display:flex;justify-content:center">'+area.innerHTML+'</body></html>');
+  w.document.close();
+
+  setTimeout(function(){ w.focus(); w.print(); }, 300);
+}
+
+/* ===== EFETIVO -> WHATSAPP (grupo por obra) ===== */
+async function listarGruposWhatsapp(){
+  const box = document.getElementById('wgrupoLista');
+  if(box) box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Buscando grupos...</div>';
+  try{
+    const {data, error} = await sb.functions.invoke('efetivo-whatsapp', {body:{evento:'listar_grupos'}});
+    if(error) throw error;
+    const grupos = (data && data.grupos) || [];
+    if(!grupos.length){ if(box) box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum grupo encontrado. Confira se a funcao efetivo-whatsapp esta publicada e conectada.</div>'; return; }
+    if(box){
+      box.innerHTML = '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px">'+
+        grupos.map(g=>'<div class="grupo-item" data-id="'+escapeHtml(g.id)+'" style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer">'+escapeHtml(g.subject||g.id)+'<div style="font-size:11px;color:var(--muted)">'+escapeHtml(g.id)+'</div></div>').join('')+
+        '</div>';
+      box.querySelectorAll('.grupo-item').forEach(el=>el.addEventListener('click',function(){ const inp=document.getElementById('f_wgrupo'); if(inp) inp.value=el.getAttribute('data-id'); box.innerHTML=''; }));
+    }
+  }catch(e){ if(box) box.innerHTML='<div style="color:#dc2626;font-size:12px;padding:6px">Erro ao listar: '+escapeHtml(e.message||String(e))+'. Voce pode colar o ID do grupo manualmente.</div>'; }
+}
+
+async function enviarEfetivoGrupoAgora(){
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
+  if(!confirm('Enviar o efetivo de hoje para o(s) grupo(s) de WhatsApp agora?')) return;
+  toast('Enviando efetivo...');
+  try{
+    const body = {evento:'efetivo_diario'};
+    if(obraSel) body.obraId = parseInt(obraSel);
+    const {data, error} = await sb.functions.invoke('efetivo-whatsapp', {body:body});
+    if(error) throw error;
+    if(data && data.ok===false){ toast('Falhou: '+(data.error||'erro'),'err'); return; }
+    toast('Efetivo enviado'+((data && data.enviados!=null)?(' ('+data.enviados+' grupo[s])'):''));
+  }catch(e){ toast('Erro ao enviar: '+(e.message||e),'err'); }
+}
+
 
 /* ===== DOCS EXIGIDOS / STATUS ===== */
 function docsExigidosEmpresa(empresa, obraId){
@@ -1149,7 +1459,7 @@ function toolbarFiltros(opts={}){
 /* ===== OBRAS ===== */
 function renderObras(){
   const lista = escopoObras().filter(o=>!filtros.busca || o.nome.toLowerCase().includes(filtros.busca.toLowerCase()));
-  const canEdit = pode('*') || session.tipo==='sesmt';
+  const canEdit = pode('*') || (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
   document.getElementById('main').innerHTML = `
     <div class="page-header">
       <div><div class="page-title">Obras</div><div class="page-sub">Documentações exigidas são definidas por obra</div></div>
@@ -1191,7 +1501,7 @@ function editObra(id){
         <select id="f_coord"><option value="">--</option>${coords.map(c=>`<option value="${c.id}" ${o.coordenadorId===c.id?'selected':''}>${c.nome}</option>`).join('')}</select>
       </div>
       <div class="form-group"><label>Coordenador SESMT <span style="color:var(--crit)">*</span></label>
-        <select id="f_sesmt"><option value="">-- obrigatório --</option>${(DB.usuarios.filter(u=>['sesmt','diretoria'].includes(u.tipo))).map(s=>`<option value="${s.id}" ${o.sesmtId===s.id?'selected':''}>${s.nome}</option>`).join('')}</select>
+        <select id="f_sesmt"><option value="">-- obrigatório --</option>${(DB.usuarios.filter(u=>['sesmt','diretoria','coord_sesmt'].includes(u.tipo))).map(s=>`<option value="${s.id}" ${o.sesmtId===s.id?'selected':''}>${s.nome}</option>`).join('')}</select>
       </div>
       <div class="form-group"><label>Engenheiro Residente</label>
         <select id="f_eng"><option value="">--</option>${engs.map(e=>`<option value="${e.id}" ${o.engenheiroId===e.id?'selected':''}>${e.nome}</option>`).join('')}</select>
@@ -1201,6 +1511,14 @@ function editObra(id){
       </div>
     </div>
     <div class="form-group"><label>Cliente / Tomador da Obra (nome)</label><input id="f_cliente" value="${o.clienteNome||''}" placeholder="Ex: Hospital Municipal Nova HU"></div>
+    <div class="form-group"><label>📱 Grupo de WhatsApp da obra (efetivo diário)</label>
+      <div style="display:flex;gap:8px">
+        <input id="f_wgrupo" value="${o.whatsappGrupo||''}" placeholder="ID do grupo (termina em @g.us)" style="flex:1">
+        <button type="button" class="btn btn-secondary" onclick="listarGruposWhatsapp()">Listar grupos</button>
+      </div>
+      <div id="wgrupoLista"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">O efetivo do dia será enviado automaticamente a este grupo no fim do expediente. Clique em "Listar grupos" para escolher.</div>
+    </div>
     <div class="form-group">
       <label>📨 Destinatários extras de e-mail (separados por vírgula ou ponto-vírgula)</label>
       <textarea id="f_destext" rows="2" placeholder="cliente@empresa.com, gestor@empresa.com">${o.destinatariosExtras||''}</textarea>
@@ -1224,7 +1542,7 @@ function editObra(id){
     const data = {
       nome:val('f_nome'),endereco:val('f_end'),
       coordenadorId:val('f_coord')||null, engenheiroId:val('f_eng')||null, tstId:val('f_tst')||null, sesmtId:val('f_sesmt')||null,
-      clienteNome:val('f_cliente'), destinatariosExtras:val('f_destext'),
+      clienteNome:val('f_cliente'), destinatariosExtras:val('f_destext'), whatsappGrupo:val('f_wgrupo')||null,
       ativa:document.getElementById('f_ativa').checked,
       docsEmpresa: getChecked('f_docs_empresa'),
       docsFuncionarioBase: getChecked('f_docs_func'),
@@ -1263,7 +1581,7 @@ function renderEmpresas(){
     const q = filtros.busca.toLowerCase();
     lista = lista.filter(e=>e.razao.toLowerCase().includes(q)||e.cnpj.includes(q));
   }
-  const canEdit = session.tipo==='sesmt';
+  const canEdit = (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
   document.getElementById('main').innerHTML = `
     <div class="page-header">
       <div><div class="page-title">Empresas Parceiras</div><div class="page-sub">Fornecedores que atuam nas obras</div></div>
@@ -1427,7 +1745,7 @@ function renderFuncionarios(){
       if(filtros.status==='info') return s.aguard>0;
     });
   }
-  const isAdmin = session.tipo==='sesmt';
+  const isAdmin = (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
   const isEmpresa = session.tipo==='empresa';
   document.getElementById('main').innerHTML = `
     <div class="page-header">
@@ -1451,6 +1769,7 @@ function renderFuncionarios(){
             <td><span class="status ${cls}">${s.ok}/${s.total}</span></td>
             <td class="small-actions">
               <button class="btn btn-secondary btn-sm" onclick="verDocsRef('funcionario',${f.id},'${esc(f.nome)}')">📄</button>
+              <button class="btn btn-secondary btn-sm" title="Cracha / QR Code" onclick="crachaFuncionario(${f.id})">🪪</button>
               ${pode('notificar')?`<button class="btn btn-warn btn-sm" title="Notificar pendências" onclick="notificarFuncionario(${f.id})">✉️</button>`:''}
               ${pode('enviar_doc')?`<button class="btn btn-secondary btn-sm" onclick="editFuncionario(${f.id})">Editar</button>`:''}
             </td>
@@ -1887,7 +2206,7 @@ function renderUsuarios(){
   document.getElementById('main').innerHTML = `
     <div class="page-header">
       <div><div class="page-title">Usuários</div><div class="page-sub">Logins internos da construtora e empresas parceiras</div></div>
-      <button class="btn btn-primary" onclick="editUsuario()">+ Novo Usuário</button>
+      ${tiposCriaveisUsuario().length?'<button class="btn btn-primary" onclick="editUsuario()">+ Novo Usuário</button>':''}
     </div>
     <div class="card">
       <table>
@@ -1899,20 +2218,50 @@ function renderUsuarios(){
             vinculo = e?e.razao:'-';
           } else if(u.obraIds?.length){
             vinculo = u.obraIds.map(oid=>{const o=DB.obras.find(x=>x.id===oid);return o?.nome;}).filter(Boolean).join(', ');
-          } else vinculo = u.tipo==='sesmt'||u.tipo==='visualizador'?'Todas as obras':'-';
+          } else vinculo = ['sesmt','coord_sesmt','ti','diretoria','visualizador'].includes(u.tipo)?'Todas as obras':'-';
           return `<tr>
             <td><b>${u.nome}</b>${u.naoApagar?' <span title="Protegido" style="color:var(--bm-orange)">🔒</span>':''}</td><td>${u.email}</td>
             <td><span class="badge-role ${ROLES[u.tipo].badge}">${ROLES[u.tipo].label}</span></td>
             <td>${vinculo}</td>
-            <td>${u.tipo!=='empresa'?`<button class="btn btn-secondary btn-sm" onclick="editUsuario('${u.id}')">Editar</button>`:'<span style="color:var(--muted);font-size:12px">Gerenciado em Empresas</span>'}</td>
+            <td>${u.tipo==='empresa'?'<span style="color:var(--muted);font-size:12px">Gerenciado em Empresas</span>':(podeGerenciarUsuario(u)?`<button class="btn btn-secondary btn-sm" onclick="editUsuario('${u.id}')">Editar</button>`:'<span style="color:var(--muted);font-size:12px">—</span>')}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>
     </div>
   `;
 }
+const ROLE_LABELS_CRIACAO = {
+  diretoria:'Diretoria (controle total, protegido)',
+  ti:'TI (administrador técnico, controle total)',
+  sesmt:'SESMT (acesso total)',
+  coord_sesmt:'Coordenador SESMT (cria equipe do SESMT)',
+  coordenador:'Coordenador de Obra (suas obras)',
+  engenheiro:'Engenheiro (suas obras)',
+  tst:'TST - Téc. Seg. Trabalho (suas obras, pode aprovar)',
+  cliente:'Cliente da Obra (leitura, suas obras)',
+  visualizador:'Visualizador (leitura, todas obras)',
+  vigia:'Vigia / Portaria (registra entradas e saídas)'
+};
+function tiposCriaveisUsuario(){
+  const t = session.tipo;
+  const OPER = ['coordenador','engenheiro','tst','cliente','visualizador','vigia'];
+  if(t==='diretoria'||t==='ti') return ['diretoria','ti','sesmt','coord_sesmt'].concat(OPER);
+  if(t==='coord_sesmt') return ['sesmt','coord_sesmt'].concat(OPER);
+  if(t==='sesmt') return OPER.slice();
+  return [];
+}
+function podeGerenciarUsuario(u){
+  if(!u) return false;
+  if(u.id===session.id) return true;
+  return tiposCriaveisUsuario().includes(u.tipo);
+}
 function editUsuario(id){
-  const u = id ? DB.usuarios.find(x=>x.id===id) : {email:'',senha:'',nome:'',tipo:'coordenador',obraIds:[]};
+  const u = id ? DB.usuarios.find(x=>x.id===id) : {email:'',senha:'',nome:'',tipo:(tiposCriaveisUsuario()[0]||'coordenador'),obraIds:[]};
+  const _permit = tiposCriaveisUsuario();
+  let _tiposLista = _permit.slice();
+  if(id && u && !_tiposLista.includes(u.tipo)) _tiposLista = [u.tipo].concat(_tiposLista);
+  const _tipoTrancado = (u && u.naoApagar) || (id && !_permit.includes(u.tipo));
+  const _optsTipo = _tiposLista.map(t=>'<option value="'+t+'" '+(u.tipo===t?'selected':'')+'>'+(ROLE_LABELS_CRIACAO[t]||t)+'</option>').join('');
   showModal(id?'Editar Usuário':'Novo Usuário', `
     <div class="form-group"><label>Nome</label><input id="f_nome" value="${u.nome}"></div>
     <div class="grid-2">
@@ -1920,17 +2269,11 @@ function editUsuario(id){
       <div class="form-group"><label>Senha ${id?'(em branco mantém)':''}</label><input id="f_senha" type="password" placeholder="${id?'••••':''}"></div>
     </div>
     <div class="form-group"><label>Perfil</label>
-      <select id="f_tipo" ${u.naoApagar?'disabled':''} onchange="document.getElementById('obrasDiv').style.display=['coordenador','engenheiro','tst','cliente'].includes(this.value)?'block':'none'">
-        <option value="diretoria" ${u.tipo==='diretoria'?'selected':''}>Diretoria (controle total, protegido)</option>
-        <option value="sesmt" ${u.tipo==='sesmt'?'selected':''}>SESMT (acesso total)</option>
-        <option value="coordenador" ${u.tipo==='coordenador'?'selected':''}>Coordenador (suas obras)</option>
-        <option value="engenheiro" ${u.tipo==='engenheiro'?'selected':''}>Engenheiro (suas obras)</option>
-        <option value="tst" ${u.tipo==='tst'?'selected':''}>TST - Téc. Seg. Trabalho (suas obras, pode aprovar)</option>
-        <option value="cliente" ${u.tipo==='cliente'?'selected':''}>Cliente da Obra (leitura, suas obras)</option>
-        <option value="visualizador" ${u.tipo==='visualizador'?'selected':''}>Visualizador (leitura, todas obras)</option>
+      <select id="f_tipo" ${_tipoTrancado?'disabled':''} onchange="document.getElementById('obrasDiv').style.display=['coordenador','engenheiro','tst','cliente','vigia'].includes(this.value)?'block':'none'">
+        ${_optsTipo}
       </select>
     </div>
-    <div class="form-group" id="obrasDiv" style="display:${['coordenador','engenheiro','tst','cliente'].includes(u.tipo)?'block':'none'}">
+    <div class="form-group" id="obrasDiv" style="display:${['coordenador','engenheiro','tst','cliente','vigia'].includes(u.tipo)?'block':'none'}">
       <label>Obras vinculadas</label>
       <div class="checkbox-list">${DB.obras.map(o=>`<label><input type="checkbox" name="f_obras" value="${o.id}" ${(u.obraIds||[]).includes(o.id)?'checked':''}>${o.nome}</label>`).join('')}</div>
     </div>
@@ -1958,7 +2301,7 @@ function editUsuario(id){
   }, id?(function(){
     const acoes = [];
     // Resetar 2FA — só diretoria, só pra outros usuários do tipo que exige MFA
-    if(id && session.tipo==='diretoria' && u.id!==session.id && TIPOS_MFA_OBRIGATORIO.includes(u.tipo)){
+    if(id && ['diretoria','ti'].includes(session.tipo) && u.id!==session.id && TIPOS_MFA_OBRIGATORIO.includes(u.tipo)){
       acoes.push({label:'🔐 Resetar 2FA',cls:'btn-warn',fn:()=>resetarMfaUsuario(id, u.nome)});
     }
     // Excluir
