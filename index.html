@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
     --bm-blue:#1a3d7c; --bm-orange:#e8a23a;
@@ -1018,44 +1019,116 @@ function exportarEfetivoCSV(){
 }
 
 /* ===== CRACHA / QR DO COLABORADOR ===== */
+let _crachaCachePNG = null;
 function crachaFuncionario(id){
   const f = DB.funcionarios.find(x=>x.id===id);
   if(!f){ toast('Colaborador nao encontrado','err'); return; }
   if(!f.qrToken){ toast('Este colaborador ainda nao tem QR gerado. Recarregue a pagina (Ctrl+Shift+R) e tente de novo.','warn'); return; }
-  const emp = DB.empresas.find(e=>e.id===f.empresaId);
-  const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
-  const obra = DB.obras.find(o=>o.id===f.obraId);
-  const azul = (DB.config && DB.config.corPrimaria) || '#1a3d7c';
+  if(typeof QRCode==='undefined'){ toast('Biblioteca de QR nao carregou. Recarregue a pagina.','err'); return; }
   showModal('Cracha / QR Code',
-    '<div id="crachaArea" style="display:flex;justify-content:center">'+
-      '<div style="width:300px;border:1px solid #ddd;border-radius:12px;overflow:hidden;font-family:Arial,sans-serif">'+
-        '<div style="background:'+azul+';color:#fff;padding:10px 14px;font-weight:700;font-size:13px">'+escapeHtml((DB.config&&DB.config.nomeEmpresa)||'BRANDAO & MARMO')+' - SESMT</div>'+
-        '<div style="padding:16px;text-align:center">'+
-          '<div id="qrBox" style="display:flex;justify-content:center;margin-bottom:10px"></div>'+
-          '<div style="font-size:17px;font-weight:700">'+escapeHtml(f.nome)+'</div>'+
-          '<div style="color:#555;font-size:13px">'+escapeHtml((funcao&&funcao.nome)||'-')+'</div>'+
-          '<div style="color:#555;font-size:13px">'+escapeHtml((emp&&emp.razao)||'-')+'</div>'+
-          '<div style="color:#888;font-size:12px;margin-top:4px">CPF: '+escapeHtml(f.cpf||'-')+'</div>'+
-          (obra?'<div style="color:#888;font-size:12px">Obra: '+escapeHtml(obra.nome)+'</div>':'')+
-        '</div>'+
-      '</div>'+
+    '<div style="display:flex;flex-direction:column;align-items:center;gap:10px">'+
+      '<div id="crachaImg" style="min-height:220px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">Gerando cracha...</div>'+
     '</div>',
-    null, [{label:'Imprimir', cls:'btn-primary', fn:function(){ imprimirCracha(); }}], true);
-  setTimeout(function(){
-    const box=document.getElementById('qrBox'); if(!box) return;
-    if(typeof QRCode==='undefined'){ box.innerHTML='<div style="color:#dc2626;font-size:12px">Biblioteca de QR nao carregou. Recarregue a pagina.</div>'; return; }
-    box.innerHTML='';
-    new QRCode(box, {text:QR_PREFIX+f.qrToken, width:170, height:170, correctLevel:QRCode.CorrectLevel.M});
-  }, 80);
+    null, [{label:'Baixar PNG', cls:'btn-primary', fn:function(){ baixarCrachaPNG(id); }}, {label:'Imprimir', cls:'btn-secondary', fn:function(){ imprimirCrachaPNG(id); }}], true);
+  gerarCrachaPNG(f).then(function(png){
+    _crachaCachePNG = {id:id, png:png};
+    const box=document.getElementById('crachaImg');
+    if(box) box.innerHTML = '<img src="'+png+'" style="max-width:300px;border:1px solid #ddd;border-radius:10px">';
+  }).catch(function(e){ const box=document.getElementById('crachaImg'); if(box) box.innerHTML='<div style="color:#dc2626;font-size:12px">Erro ao gerar: '+escapeHtml(e.message||String(e))+'</div>'; });
 }
-function imprimirCracha(){
-  const area = document.getElementById('crachaArea'); if(!area) return;
-  const w = window.open('', '_blank', 'width=380,height=560');
+function baixarCrachaPNG(id){
+  if(!_crachaCachePNG || _crachaCachePNG.id!==id){ toast('Aguarde gerar o cracha','warn'); return; }
+  const f = DB.funcionarios.find(x=>x.id===id)||{};
+  const a=document.createElement('a'); a.href=_crachaCachePNG.png; a.download='cracha_'+safeName(f.nome||'colaborador')+'.png'; document.body.appendChild(a); a.click(); a.remove();
+}
+function imprimirCrachaPNG(id){
+  if(!_crachaCachePNG || _crachaCachePNG.id!==id){ toast('Aguarde gerar o cracha','warn'); return; }
+  const w=window.open('','_blank','width=420,height=640');
   if(!w){ toast('Permita pop-ups para imprimir','warn'); return; }
-  w.document.write('<html><head><title>Cracha</title></head><body style="margin:0;padding:20px;display:flex;justify-content:center">'+area.innerHTML+'</body></html>');
+  w.document.write('<html><head><title>Cracha</title></head><body style="margin:0;padding:20px;text-align:center"><img src="'+_crachaCachePNG.png+'" style="max-width:360px"></body></html>');
   w.document.close();
-
   setTimeout(function(){ w.focus(); w.print(); }, 300);
+}
+function carregarImg(src){ return new Promise(function(res){ const i=new Image(); i.onload=function(){res(i);}; i.onerror=function(){res(null);}; i.src=src; }); }
+async function pdfPrimeiraPaginaDataURI(blob){
+  try{
+    if(typeof pdfjsLib==='undefined') return null;
+    try{ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){}
+    const buf = await blob.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({scale:1});
+    const scale = Math.min(2.5, 700/base.width);
+    const vp = page.getViewport({scale:scale});
+    const cv = document.createElement('canvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+    await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
+    return cv.toDataURL('image/png');
+  }catch(e){ console.error('pdf foto', e); return null; }
+}
+async function fotoCrachaDataURI(func){
+  try{
+    const doc = DB.documentos.find(d=>d.refTipo==='funcionario' && d.refId===func.id && d.docId==='foto' && d.arquivoPath);
+    if(!doc) return null;
+    const {data, error} = await sb.storage.from('documentos').createSignedUrl(doc.arquivoPath, 3600);
+    if(error || !data) return null;
+    const resp = await fetch(data.signedUrl);
+    const blob = await resp.blob();
+    const _p=(doc.arquivoPath||doc.arquivo||'').toLowerCase();
+    const ehPdf = _p.endsWith('.pdf') || /^application\/pdf/.test(blob.type||'');
+    if(ehPdf) return await pdfPrimeiraPaginaDataURI(blob);
+    return await new Promise(function(res){ const fr=new FileReader(); fr.onload=function(){res(fr.result);}; fr.onerror=function(){res(null);}; fr.readAsDataURL(blob); });
+  }catch(e){ return null; }
+}
+function qrCanvasDataURI(text, size){
+  try{
+    const tmp=document.createElement('div');
+    new QRCode(tmp, {text:text, width:size, height:size, correctLevel:QRCode.CorrectLevel.M});
+    const cv=tmp.querySelector('canvas'); if(cv) return cv.toDataURL('image/png');
+    const im=tmp.querySelector('img'); return im?im.src:null;
+  }catch(e){ return null; }
+}
+async function gerarCrachaPNG(func){
+  const emp = DB.empresas.find(e=>e.id===func.empresaId);
+  const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
+  const obra = DB.obras.find(o=>o.id===func.obraId);
+  const azul = (DB.config && DB.config.corPrimaria) || '#1a3d7c';
+  const nomeEmp = (DB.config && DB.config.nomeEmpresa) || 'BRANDAO & MARMO';
+  const W=400, H=620, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=azul; ctx.fillRect(0,0,W,64);
+  ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 19px Arial';
+  ctx.fillText(nomeEmp+' - SESMT', W/2, 40);
+  const fX=(W-150)/2, fY=86, fW=150, fH=180;
+  const fotoURI = await fotoCrachaDataURI(func);
+  let drew=false;
+  if(fotoURI){ const im=await carregarImg(fotoURI); if(im){ ctx.fillStyle='#fff'; ctx.fillRect(fX,fY,fW,fH); const r=Math.min(fW/im.width,fH/im.height); const dw=im.width*r, dh=im.height*r; ctx.drawImage(im, fX+(fW-dw)/2, fY+(fH-dh)/2, dw, dh); drew=true; } }
+  if(!drew){ ctx.fillStyle='#eef1f5'; ctx.fillRect(fX,fY,fW,fH); ctx.fillStyle='#94a3b8'; ctx.font='13px Arial'; ctx.fillText('sem foto', W/2, fY+fH/2); }
+  ctx.strokeStyle='#ccc'; ctx.lineWidth=1; ctx.strokeRect(fX,fY,fW,fH);
+  let y=fY+fH+34;
+  ctx.fillStyle='#111'; ctx.font='bold 22px Arial'; ctx.fillText(func.nome||'-', W/2, y);
+  ctx.fillStyle='#555'; ctx.font='15px Arial';
+  y+=24; ctx.fillText((funcao&&funcao.nome)||'-', W/2, y);
+  y+=22; ctx.fillText((emp&&emp.razao)||'-', W/2, y);
+  ctx.fillStyle='#888'; ctx.font='13px Arial';
+  y+=20; ctx.fillText('CPF: '+(func.cpf||'-'), W/2, y);
+  if(obra){ y+=18; ctx.fillText('Obra: '+obra.nome, W/2, y); }
+  const qrSize=150, qrURI=qrCanvasDataURI(QR_PREFIX+func.qrToken, qrSize);
+  if(qrURI){ const qi=await carregarImg(qrURI); if(qi) ctx.drawImage(qi,(W-qrSize)/2, H-qrSize-22, qrSize, qrSize); }
+  return cv.toDataURL('image/png');
+}
+async function enviarCrachaColaborador(func){
+  try{
+    const emp = DB.empresas.find(e=>e.id===func.empresaId);
+    if(!emp || !emp.email) return;
+    const png = await gerarCrachaPNG(func);
+    const obra = DB.obras.find(o=>o.id===func.obraId);
+    const ok = await enviarWebhook({evento:'cracha_colaborador', dados:{
+      empresaEmail:emp.email, empresaNome:emp.razao, colaborador:func.nome, cpf:func.cpf,
+      obra:obra?obra.nome:'', arquivoNome:'cracha_'+safeName(func.nome||'colaborador')+'.png', pngBase64:png
+    }});
+    if(ok) toast('Cracha enviado a empresa por e-mail');
+  }catch(e){ console.error('cracha email', e); }
 }
 
 /* ===== EFETIVO -> WHATSAPP (grupo por obra) ===== */
@@ -2070,8 +2143,11 @@ async function excluirDoc(docId){
 }
 function aprovarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
+  let _func=null, _antesOK=false;
+  if(d.refTipo==='funcionario'){ _func=DB.funcionarios.find(f=>f.id===d.refId); if(_func){ const s0=calcStatus('funcionario',_func); _antesOK=(s0.crit===0&&s0.pend===0&&s0.aguard===0); } }
   d.sesmtStatus = 'aprovado'; d.sesmtPor = session.id; d.sesmtMotivo = '';
   save(); toast('Documento aprovado'); closeModal(); go(currentPage);
+  if(_func){ const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0); if(_agoraOK && !_antesOK) enviarCrachaColaborador(_func); }
 }
 function recusarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
