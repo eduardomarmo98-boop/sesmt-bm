@@ -1108,8 +1108,10 @@ async function pdfPrimeiraPaginaDataURI(blob){
 }
 async function fotoCrachaDataURI(func){
   try{
-    const doc = DB.documentos.find(d=>d.refTipo==='funcionario' && String(d.refId)===String(func.id) && d.docId==='foto' && d.arquivoPath);
-    if(!doc) return null;
+    const _fids = DB.catalogoDocs.filter(c=>c.categoria==='funcionario' && /foto/i.test(c.nome||'')).map(c=>c.id);
+    const _docsFunc = DB.documentos.filter(d=>d.refTipo==='funcionario' && String(d.refId)===String(func.id));
+    const doc = _docsFunc.find(d=>(d.docId==='foto' || _fids.indexOf(d.docId)>=0) && d.arquivoPath);
+    if(!doc){ try{ console.warn('cracha sem foto -> docs do colaborador:', _docsFunc.map(function(x){return x.docId+(x.arquivoPath?' (com arquivo)':' (sem arquivo)');}), '| ids de foto no catalogo:', _fids); }catch(e){} return null; }
     const {data:blob, error} = await sb.storage.from('documentos').download(doc.arquivoPath);
     if(error || !blob) return null;
     const _p=(doc.arquivoPath||doc.arquivo||'').toLowerCase();
@@ -1126,6 +1128,12 @@ function qrCanvasDataURI(text, size){
     const im=tmp.querySelector('img'); return im?im.src:null;
   }catch(e){ return null; }
 }
+function fitLinha(ctx, txt, maxW, weight, basePx, minPx){
+  txt=String(txt||'-'); let px=basePx; ctx.font=weight+px+'px Arial';
+  while(px>minPx && ctx.measureText(txt).width>maxW){ px--; ctx.font=weight+px+'px Arial'; }
+  if(ctx.measureText(txt).width>maxW){ let t=txt; while(t.length>1 && ctx.measureText(t+'...').width>maxW){ t=t.slice(0,-1); } txt=t+'...'; }
+  return txt;
+}
 async function gerarCrachaPNG(func){
   const emp = DB.empresas.find(e=>e.id===func.empresaId);
   const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
@@ -1137,21 +1145,22 @@ async function gerarCrachaPNG(func){
   ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
   ctx.fillStyle=azul; ctx.fillRect(0,0,W,64);
   ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 19px Arial';
-  ctx.fillText(nomeEmp+' - SESMT', W/2, 40);
+  ctx.fillText(fitLinha(ctx, nomeEmp+' - SESMT', W-40, 'bold ', 19, 12), W/2, 40);
   const fX=(W-150)/2, fY=86, fW=150, fH=180;
   const fotoURI = await fotoCrachaDataURI(func);
   let drew=false;
   if(fotoURI){ const im=await carregarImg(fotoURI); if(im){ ctx.fillStyle='#fff'; ctx.fillRect(fX,fY,fW,fH); const r=Math.min(fW/im.width,fH/im.height); const dw=im.width*r, dh=im.height*r; ctx.drawImage(im, fX+(fW-dw)/2, fY+(fH-dh)/2, dw, dh); drew=true; } }
   if(!drew){ ctx.fillStyle='#eef1f5'; ctx.fillRect(fX,fY,fW,fH); ctx.fillStyle='#94a3b8'; ctx.font='13px Arial'; ctx.fillText('sem foto', W/2, fY+fH/2); }
   ctx.strokeStyle='#ccc'; ctx.lineWidth=1; ctx.strokeRect(fX,fY,fW,fH);
+  const maxW=W-44;
   let y=fY+fH+34;
-  ctx.fillStyle='#111'; ctx.font='bold 22px Arial'; ctx.fillText(func.nome||'-', W/2, y);
-  ctx.fillStyle='#555'; ctx.font='15px Arial';
-  y+=24; ctx.fillText((funcao&&funcao.nome)||'-', W/2, y);
-  y+=22; ctx.fillText((emp&&emp.razao)||'-', W/2, y);
-  ctx.fillStyle='#888'; ctx.font='13px Arial';
-  y+=20; ctx.fillText('CPF: '+(func.cpf||'-'), W/2, y);
-  if(obra){ y+=18; ctx.fillText('Obra: '+obra.nome, W/2, y); }
+  ctx.fillStyle='#111'; ctx.fillText(fitLinha(ctx, func.nome||'-', maxW, 'bold ', 22, 14), W/2, y);
+  ctx.fillStyle='#555';
+  y+=24; ctx.fillText(fitLinha(ctx,(funcao&&funcao.nome)||'-', maxW, '', 15, 11), W/2, y);
+  y+=22; ctx.fillText(fitLinha(ctx,(emp&&emp.razao)||'-', maxW, '', 15, 10), W/2, y);
+  ctx.fillStyle='#888';
+  y+=20; ctx.fillText(fitLinha(ctx,'CPF: '+(func.cpf||'-'), maxW, '', 13, 10), W/2, y);
+  if(obra){ y+=18; ctx.fillText(fitLinha(ctx,'Obra: '+obra.nome, maxW, '', 13, 10), W/2, y); }
   const qrSize=150, qrURI=qrCanvasDataURI(QR_PREFIX+func.qrToken, qrSize);
   if(qrURI){ const qi=await carregarImg(qrURI); if(qi) ctx.drawImage(qi,(W-qrSize)/2, H-qrSize-22, qrSize, qrSize); }
   return cv.toDataURL('image/png');
