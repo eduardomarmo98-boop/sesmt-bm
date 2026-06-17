@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.17.4">
+<meta name="app-version" content="2026.06.17.5">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -114,7 +114,8 @@
   .badge-role.empresa{background:#F88800;color:#fff}
   .layout{display:flex;min-height:calc(100vh - 60px - 56px)}
   .footer{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;border-top:1px solid var(--border);color:var(--muted);font-size:12px;height:56px}
-  .footer img{max-height:30px}
+  .footer img{max-height:28px;display:block;width:auto}
+  #footerLogo{display:flex;align-items:center;gap:8px}
   .sidebar{width:230px;background:#fff;border-right:1px solid var(--border);padding:16px 0}
   .nav-section{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:14px 20px 6px;font-weight:600}
   .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:#4b5563;font-weight:500;border-left:3px solid transparent}
@@ -2668,7 +2669,6 @@ function renderNotificacoes(){
       <button class="btn btn-primary" onclick="enviarNotificacoesEmLote()">✉️ Disparar em lote</button>
     </div>
     ${toolbarFiltros({busca:false,obra:true,empresa:true})}
-    <div class="alert">⚠️ <b>Demo:</b> SMTP em <a onclick="go('config')" style="color:var(--bm-blue);cursor:pointer;text-decoration:underline">Configurações</a> dispara real. Aqui é simulado.</div>
     <div class="card">
       <h3 style="margin-bottom:10px">📧 E-mails a enviar (${ids.length} empresa(s))</h3>
       ${ids.length===0?'<div class="empty"><div class="empty-icon">✅</div>Tudo em dia</div>':
