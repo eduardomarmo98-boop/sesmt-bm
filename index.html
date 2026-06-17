@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.05.25.2">
+<meta name="app-version" content="2026.06.17.1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -1702,7 +1702,7 @@ function renderEmpresas(){
     const q = filtros.busca.toLowerCase();
     lista = lista.filter(e=>e.razao.toLowerCase().includes(q)||e.cnpj.includes(q));
   }
-  const canEdit = (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
+  const canEdit = pode('*');
   document.getElementById('main').innerHTML = `
     <div class="page-header">
       <div><div class="page-title">Empresas Parceiras</div><div class="page-sub">Fornecedores que atuam nas obras</div></div>
