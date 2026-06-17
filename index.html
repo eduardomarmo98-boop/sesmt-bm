@@ -9,7 +9,16 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.17.1">
+<meta name="app-version" content="2026.06.17.4">
+<meta name="theme-color" content="#1a3d7c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SESMT">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -17,7 +26,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
-    --bm-blue:#1a3d7c; --bm-orange:#e8a23a;
+    --bm-blue:#1a3d7c; --bm-orange:#F88800;
     --bg:#f4f6fa; --card:#fff; --text:#1f2937; --muted:#6b7280; --border:#e5e7eb;
     --ok:#16a34a; --warn:#f59e0b; --crit:#dc2626; --info:#2563eb;
     --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
@@ -49,12 +58,13 @@
 
   /* LOGIN */
   #loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0f254d 0%,var(--bm-blue) 50%,#0a1d3d 100%);position:relative;overflow:hidden}
-  #loginScreen::before{content:'';position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(232,162,58,.15) 0%,transparent 70%);top:-200px;right:-200px}
+  #loginScreen::before{content:'';position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(248,136,0,.15) 0%,transparent 70%);top:-200px;right:-200px}
   #loginScreen::after{content:'';position:absolute;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.05) 0%,transparent 70%);bottom:-200px;left:-150px}
   .login-box{background:#fff;padding:44px 40px;border-radius:16px;width:420px;box-shadow:0 30px 70px rgba(0,0,0,.4);position:relative;z-index:1}
   .logo{text-align:center;margin-bottom:28px}
-  .logo-name{font-size:32px;font-weight:800;color:var(--bm-blue);letter-spacing:.5px;line-height:1}
-  .logo-name span{color:var(--bm-orange)}
+  .logo-name{display:flex;justify-content:center;align-items:baseline;gap:.16em;font-size:clamp(20px,6vw,30px);font-weight:800;color:var(--bm-blue);letter-spacing:.3px;line-height:1.05}
+  .logo-name .ln-2{color:var(--bm-orange)}
+  .logo-name .ln-amp{background:linear-gradient(90deg,var(--bm-blue) 50%,var(--bm-orange) 50%);-webkit-background-clip:text;background-clip:text;color:transparent}
   .logo-sub{font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:6px;font-weight:600;opacity:.7}
   .form-group{margin-bottom:16px}
   .login-hint{font-size:12px;color:var(--muted);margin-top:16px;padding:10px;background:#f9fafb;border-radius:6px}
@@ -80,6 +90,15 @@
   .filtros-clear{margin-left:auto;background:transparent;border:none;color:var(--crit);font-size:12px;font-weight:600;cursor:pointer;padding:4px 8px}
   .filtros-clear:hover{text-decoration:underline}
   .login-hint b{color:var(--text)}
+  .login-box{overflow:hidden}
+  .login-box::before{content:'';position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,var(--bm-blue),var(--bm-orange))}
+  .login-badge{display:flex;justify-content:center;margin-bottom:14px}
+  .login-icon{width:92px;height:92px;border-radius:22px;box-shadow:0 12px 26px rgba(15,37,77,.30)}
+  .login-tag{text-align:center;color:var(--muted);font-size:13px;line-height:1.5;margin:-14px 0 16px}
+  .login-tag b{color:var(--bm-blue);font-weight:800;letter-spacing:.5px}
+  .login-feats{display:flex;justify-content:center;gap:7px;margin-bottom:22px;flex-wrap:wrap}
+  .login-feats span{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--bm-blue);background:#eef2f9;border:1px solid #dbe4f3;padding:5px 10px;border-radius:30px}
+  .login-feats svg{width:13px;height:13px;flex:none}
 
   /* APP */
   #appScreen{display:none}
@@ -92,7 +111,7 @@
   .badge-role.sesmt{background:#1a3d7c;color:#fff}
   .badge-role.coordenador,.badge-role.engenheiro{background:#0d9488;color:#fff}
   .badge-role.visualizador{background:#6b7280;color:#fff}
-  .badge-role.empresa{background:#e8a23a;color:#fff}
+  .badge-role.empresa{background:#F88800;color:#fff}
   .layout{display:flex;min-height:calc(100vh - 60px - 56px)}
   .footer{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;border-top:1px solid var(--border);color:var(--muted);font-size:12px;height:56px}
   .footer img{max-height:30px}
@@ -238,11 +257,16 @@
 <!-- LOGIN -->
 <div id="loginScreen">
   <div class="login-box">
+    <div class="login-badge"><img src="icon-192.png" alt="SESMT" class="login-icon"></div>
     <div class="logo">
-      <div class="logo-name">BRANDÃO<span>&MARMO</span></div>
-      <div class="logo-sub">ENGENHARIA E CONSTRUÇÕES</div>
+      <div class="logo-name"><span class="ln-1">BRANDÃO</span><span class="ln-amp">&amp;</span><span class="ln-2">MARMO</span></div>
     </div>
-    <div style="text-align:center;color:var(--muted);margin-bottom:20px;font-size:13px">Sistema SESMT — Controle de Documentação</div>
+    <div class="login-tag">Sistema <b>SESMT</b><br>Segurança e Saúde no Trabalho</div>
+    <div class="login-feats">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 7h6M9 11h6M9 15h4"></path></svg>Documentação</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"></path><path d="M4 12h16"></path></svg>Portaria QR</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"></path><path d="M9.5 12l1.8 1.8 3.5-3.6"></path></svg>Conformidade</span>
+    </div>
     <div class="form-group">
       <label>E-mail</label>
       <input id="loginUser" name="email" autocomplete="username" type="email" placeholder="seu@email.com">
@@ -326,7 +350,7 @@ function save(){
 }
 function load(){
   DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],
-    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiModel:'gemini-2.0-flash',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#e8a23a'}};
+    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiModel:'gemini-2.0-flash',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
 }
 
 async function loadFromSupabase(){
@@ -356,7 +380,7 @@ async function loadFromSupabase(){
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
       const c = cfg.data;
-      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiModel:c.gemini_model||'gemini-2.0-flash',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#e8a23a'};
+      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiModel:c.gemini_model||'gemini-2.0-flash',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
       // cache da marca para a tela de login (acessível antes do auth)
       try{ localStorage.setItem('bm_branding', JSON.stringify({logoData:DB.config.logoData,nomeEmpresa:DB.config.nomeEmpresa,corPrimaria:DB.config.corPrimaria,corSecundaria:DB.config.corSecundaria})); }catch(e){}
     }
@@ -369,7 +393,7 @@ async function loadFromSupabase(){
 async function syncToSupabase(){
   if(!session) return;
   const c = DB.config;
-  await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_model:c.geminiModel||'gemini-2.0-flash', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#e8a23a'});
+  await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_model:c.geminiModel||'gemini-2.0-flash', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'});
   if(DB.catalogoDocs.length){
     await sb.from('catalogo_documentos').upsert(DB.catalogoDocs.map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||''})));
   }
@@ -529,7 +553,7 @@ function _seedDESATIVADO(){
       logoData:'',
       nomeEmpresa:'BRANDÃO & MARMO',
       corPrimaria:'#1a3d7c',
-      corSecundaria:'#e8a23a',
+      corSecundaria:'#F88800',
       webhookMake:''
     },
     logs:[]
@@ -2684,7 +2708,7 @@ function renderConfig(){
       </div>
       <div class="grid-2">
         <div class="form-group"><label>Cor primária</label><input id="cf_cor1" type="color" value="${c.corPrimaria||'#1a3d7c'}"></div>
-        <div class="form-group"><label>Cor de destaque</label><input id="cf_cor2" type="color" value="${c.corSecundaria||'#e8a23a'}"></div>
+        <div class="form-group"><label>Cor de destaque</label><input id="cf_cor2" type="color" value="${c.corSecundaria||'#F88800'}"></div>
       </div>
     </div>
 
@@ -2745,7 +2769,7 @@ function salvarConfig(){
   DB.config.geminiModel=val('cf_gemmod')||'gemini-2.0-flash';
   DB.config.nomeEmpresa=val('cf_nome')||'BRANDÃO & MARMO';
   DB.config.corPrimaria=val('cf_cor1')||'#1a3d7c';
-  DB.config.corSecundaria=val('cf_cor2')||'#e8a23a';
+  DB.config.corSecundaria=val('cf_cor2')||'#F88800';
   DB.config.webhookMake=val('cf_webhook');
   // logo (lê do preview)
   const prev = document.getElementById('logoPrev');
@@ -2767,7 +2791,9 @@ function previewLogo(input){
 
 function aplicarTema(){
   document.documentElement.style.setProperty('--bm-blue', DB.config.corPrimaria||'#1a3d7c');
-  document.documentElement.style.setProperty('--bm-orange', DB.config.corSecundaria||'#e8a23a');
+  var _bmOrange = DB.config.corSecundaria;
+  if(!_bmOrange || _bmOrange.toLowerCase()==='#e8a23a') _bmOrange = '#F88800';
+  document.documentElement.style.setProperty('--bm-orange', _bmOrange);
 }
 
 async function testarWebhook(){
