@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.17.9">
+<meta name="app-version" content="2026.06.17.10">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2671,7 +2671,7 @@ function previewEmail(emp, pendencias, colaboradorNome, obraIds){
     </div>
     <div style="margin-top:14px">
       <p>Prezados,</p>
-      <p>Foram identificadas pendências documentais ${colaboradorNome?`do colaborador <b>${colaboradorNome}</b>`:`da empresa <b>${emp.razao}</b>`} que precisam ser regularizadas. Envio em PDF para <b>sesmt@brandaoemarmo.com.br</b>. Prazo de análise: 48h.</p>
+      <p>Foram identificadas pendências documentais ${colaboradorNome?`do colaborador <b>${colaboradorNome}</b>`:`da empresa <b>${emp.razao}</b>`} que precisam ser regularizadas. A regularização deve ser feita <b>pela plataforma do SESMT</b> (envio dos documentos no sistema). Prazo de análise: 48h.</p>
       <table>
         <thead><tr><th>Categoria</th><th>Item</th><th>Documento</th><th>Situação</th></tr></thead>
         <tbody>${pendencias.map(p=>`<tr><td>${p.cat}</td><td>${p.ref}</td><td>${p.doc}</td><td><span class="status ${p.status.includes('Vence')?'warn':p.status==='VENCIDO'||p.status==='RECUSADO'?'crit':'pendente'}">${p.status}</span></td></tr>`).join('')}</tbody>
