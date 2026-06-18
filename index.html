@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.17.8">
+<meta name="app-version" content="2026.06.17.9">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1210,7 +1210,7 @@ async function enviarCrachaColaborador(func){
     const obra = DB.obras.find(o=>o.id===func.obraId);
     const ok = await enviarWebhook({evento:'cracha_colaborador', dados:{
       empresaEmail:emp.email, empresaNome:emp.razao, colaborador:func.nome, cpf:func.cpf,
-      obra:obra?obra.nome:'', arquivoNome:'cracha_'+safeName(func.nome||'colaborador')+'.png', pngBase64:png
+      obra:obra?obra.nome:'', arquivoNome:'cracha_'+safeName(func.nome||'colaborador')+'.png', pngBase64:(png&&png.indexOf(',')>=0?png.split(',')[1]:png)
     }});
     if(ok) toast('Cracha enviado a empresa por e-mail');
   }catch(e){ console.error('cracha email', e); }
