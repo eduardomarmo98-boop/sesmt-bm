@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.12">
+<meta name="app-version" content="2026.06.19.14">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -606,6 +606,9 @@ async function doLogin(){
   // ===================================
   try{ if(TIPOS_MFA_OBRIGATORIO.includes(perfilTmp.tipo)) localStorage.setItem('sesmt_last2fa', String(Date.now())); }catch(e){}
   session = perfilTmp;
+  await entrarNaApp();
+}
+async function entrarNaApp(){
   await loadFromSupabase();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
@@ -633,6 +636,23 @@ async function doLogin(){
   filtros = {obraId:'',empresaId:'',status:'',busca:''};
   renderSidebar();
   go(session.tipo==='vigia' ? 'portaria' : 'dashboard');
+}
+async function restaurarSessao(){
+  try{
+    const {data} = await sb.auth.getSession();
+    const sess = data && data.session;
+    if(!sess || !sess.user) return false;
+    const {data:perfil} = await sb.from('usuarios').select('*').eq('id', sess.user.id).maybeSingle();
+    if(!perfil) return false;
+    const perfilTmp = {id:perfil.id, email:perfil.email, nome:perfil.nome, tipo:perfil.tipo, empresaId:perfil.empresa_id, obraIds:perfil.obra_ids||[], naoApagar:perfil.nao_apagar};
+    if(TIPOS_MFA_OBRIGATORIO.includes(perfilTmp.tipo)){
+      const t = Number(localStorage.getItem('sesmt_last2fa')||0);
+      if(!t || (Date.now()-t) > 86400000) return false;
+    }
+    session = perfilTmp;
+    await entrarNaApp();
+    return true;
+  }catch(e){ return false; }
 }
 async function logout(){
   await sb.auth.signOut();
@@ -1021,11 +1041,18 @@ function processarCodigo(txt){
   function mostrar(bg, titulo, sub, det, aceiteId){
     if(!ov){ return; }
     ov.style.background = bg; ov.style.display='flex';
-    const extra = aceiteId ? '<button class="btn" style="margin-top:16px;background:#fff;color:#b91c1c;font-weight:800;padding:12px 18px;font-size:15px;border:0;border-radius:8px" onclick="registrarEntradaManual('+aceiteId+')">✓ Registrar entrada mesmo assim</button>' : '';
+    let extra='', fim=btnNext;
+    if(aceiteId){
+      fim='';
+      extra = '<div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;width:100%;max-width:340px">'+
+        '<button class="btn" style="background:#16a34a;color:#fff;font-weight:800;padding:12px 16px;font-size:15px;border:0;border-radius:8px" onclick="registrarEntradaManual('+aceiteId+')">✓ Aceitar entrada mesmo assim</button>'+
+        '<button class="btn" style="background:#111827;color:#fff;font-weight:800;padding:12px 16px;font-size:15px;border:0;border-radius:8px" onclick="negarEntrada()">✕ Nao aceitar entrada</button>'+
+      '</div>';
+    }
     ov.innerHTML = '<div style="font-size:30px;font-weight:800;letter-spacing:.5px">'+titulo+'</div>'+
       (sub?'<div style="font-size:20px;font-weight:700;margin-top:10px;padding:0 8px">'+sub+'</div>':'')+
       (det?'<div style="font-size:15px;font-weight:600;margin-top:8px">'+det+'</div>':'')+
-      extra + btnNext;
+      extra + fim;
   }
   const func = DB.funcionarios.find(f=>f.qrToken===token);
   if(!func){ mostrar('#b45309','QR INVALIDO','','Cracha nao reconhecido neste sistema.'); try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){} return; }
@@ -1065,6 +1092,16 @@ function registrarEntradaManual(id){
   try{ if(navigator.vibrate) navigator.vibrate(60); }catch(e){}
 }
 
+function negarEntrada(){
+  const ov = document.getElementById('scanOverlay');
+  if(ov){
+    ov.style.background = '#374151';
+    ov.innerHTML = '<div style="font-size:28px;font-weight:800">✕ ENTRADA NEGADA</div>'+
+      '<div style="font-size:14px;margin-top:8px">acesso nao registrado</div>'+
+      '<button class="btn" style="margin-top:16px;background:#fff;color:#111;font-weight:700;padding:12px 22px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
+  }
+  try{ if(navigator.vibrate) navigator.vibrate([120,60,120]); }catch(e){}
+}
 async function registrarAcesso(func, sit, acao){
   const tipo = acao || 'entrada';
   const reg = {
@@ -2525,9 +2562,14 @@ function editFuncao(id){
     if(!data.nome){ toast('Nome obrigatório','err'); return false; }
     if(id) Object.assign(f,data); else DB.catalogoFuncoes.push({id:uid(),...data});
     save(); go('catalogo_funcoes'); toast('Função salva'); return true;
-  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{
     if(DB.funcionarios.some(c=>c.funcaoId==id)){ toast('Há colaboradores usando esta função','err'); return; }
-    if(confirm('Excluir função?')){ DB.catalogoFuncoes=DB.catalogoFuncoes.filter(x=>x.id!=id); save(); go('catalogo_funcoes'); closeModal(); }
+    if(!confirm('Excluir função?')) return;
+    if(typeof id==='number' && id<1e9){
+      const {error} = await sb.from('catalogo_funcoes').delete().eq('id', id);
+      if(error){ toast('Não foi possível excluir: '+error.message,'err'); return; }
+    }
+    DB.catalogoFuncoes=DB.catalogoFuncoes.filter(x=>x.id!=id); save(); go('catalogo_funcoes'); closeModal();
   }}]:[], false, 'lg');
 }
 
@@ -3462,6 +3504,7 @@ window.addEventListener('focus', checarAtualizacao);
 /* ===== INIT ===== */
 load();
 aplicarTema();
+restaurarSessao();
 (function setupLoginLogo(){
   let branding = null;
   try{ branding = JSON.parse(localStorage.getItem('bm_branding')||'null'); }catch(e){}
