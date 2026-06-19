@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.5">
+<meta name="app-version" content="2026.06.19.6">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1344,9 +1344,14 @@ async function enviarCrachaManual(id){
   if(!f){ toast('Colaborador nao encontrado','err'); return; }
   const emp = DB.empresas.find(e=>e.id===f.empresaId);
   if(!emp || !emp.email){ toast('Empresa sem e-mail cadastrado','warn'); return; }
-  if(!confirm('Enviar o cracha de '+(f.nome||'')+' para '+emp.email+'?')) return;
+  const sit = situacaoColaborador(f);
+  const temPend = !sit.liberado;
+  const aviso = temPend ? '\n\nATENCAO: este colaborador ainda tem pendencias. O envio ficara registrado no historico como "enviado COM pendencia".' : '';
+  if(!confirm('Enviar o cracha de '+(f.nome||'')+' para '+emp.email+'?'+aviso)) return;
   toast('Gerando e enviando o cracha...');
   await enviarCrachaColaborador(f);
+  DB.logs.push({data:new Date().toLocaleString('pt-BR'), para:emp.email, assunto:'Crachá enviado'+(temPend?' (COM pendência)':'')+' - '+(f.nome||''), itens:1, enviadoPor:session.nome, via:temPend?'cracha-pendente':'cracha-manual'});
+  save();
 }
 async function enviarPendenciasWhatsApp(empresaId){
   const grupos = pendenciasPorEmpresa();
@@ -1768,6 +1773,12 @@ function toolbarFiltros(opts={}){
 }
 
 /* ===== OBRAS ===== */
+function arquivarObra(id){
+  const o = DB.obras.find(x=>x.id===id); if(!o) return;
+  const ativando = (o.ativa===false);
+  if(!confirm((ativando?'Reativar':'Arquivar')+' a obra "'+(o.nome||'')+'"?'+(ativando?'':' Ela sai da portaria e dos cadastros, e para de gerar pendencias/notificacoes. O historico e mantido.'))) return;
+  o.ativa = ativando; save(); toast(ativando?'Obra reativada':'Obra arquivada'); go('obras');
+}
 function renderObras(){
   const lista = escopoObras().filter(o=>!filtros.busca || o.nome.toLowerCase().includes(filtros.busca.toLowerCase()));
   const canEdit = pode('*') || (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
@@ -1791,7 +1802,7 @@ function renderObras(){
             <td>${cols}</td>
             <td>${(o.docsFuncionarioBase||[]).length} base</td>
             <td><span class="status ${o.ativa?'ok':'pendente'}">${o.ativa?'Ativa':'Inativa'}</span></td>
-            <td>${canEdit?`<button class="btn btn-secondary btn-sm" onclick="editObra(${o.id})">Editar</button>`:''}</td>
+            <td>${canEdit?`<button class="btn btn-secondary btn-sm" onclick="editObra(${o.id})">Editar</button> <button class="btn btn-secondary btn-sm" onclick="arquivarObra(${o.id})">${o.ativa!==false?'Arquivar':'Reativar'}</button>`:''}</td>
           </tr>`;}).join('')}
         </tbody>
       </table>
@@ -2081,7 +2092,6 @@ function renderFuncionarios(){
             <td class="small-actions">
               <button class="btn btn-secondary btn-sm" onclick="verDocsRef('funcionario',${f.id},'${esc(f.nome)}')">📄</button>
               <button class="btn btn-secondary btn-sm" title="Cracha / QR Code" onclick="crachaFuncionario(${f.id})">🪪</button>
-              ${pode('notificar')?`<button class="btn btn-warn btn-sm" title="Notificar pendências" onclick="notificarFuncionario(${f.id})">✉️</button>`:''}
               ${pode('enviar_doc')?`<button class="btn btn-secondary btn-sm" onclick="editFuncionario(${f.id})">Editar</button>`:''}
             </td>
           </tr>`;}).join('')}</tbody>
@@ -2385,7 +2395,7 @@ function aprovarDoc(docId){
   if(d.refTipo==='funcionario'){ _func=DB.funcionarios.find(f=>f.id===d.refId); if(_func){ const s0=calcStatus('funcionario',_func); _antesOK=(s0.crit===0&&s0.pend===0&&s0.aguard===0); } }
   d.sesmtStatus = 'aprovado'; d.sesmtPor = session.id; d.sesmtMotivo = '';
   save(); toast('Documento aprovado'); closeModal(); go(currentPage);
-  if(_func){ const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0); if(_agoraOK && !_antesOK) enviarCrachaColaborador(_func); }
+  if(_func){ const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0); if(_agoraOK && !_antesOK){ enviarCrachaColaborador(_func); const _e=DB.empresas.find(e=>e.id===_func.empresaId); DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:(_e&&_e.email)||'',assunto:'Crachá enviado (automático) - '+(_func.nome||''),itens:1,enviadoPor:'sistema',via:'cracha-auto'}); save(); } }
 }
 function recusarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
@@ -2725,7 +2735,7 @@ function pendenciasPorEmpresa(){
   function add(empresaId, item){ (grupos[empresaId]=grupos[empresaId]||[]).push(item); }
   DB.empresas.forEach(e=>{
     (e.obraIds||[]).forEach(oid=>{
-      const obra = DB.obras.find(o=>o.id===oid); if(!obra) return;
+      const obra = DB.obras.find(o=>o.id===oid); if(!obra || obra.ativa===false) return;
       (obra.docsEmpresa||[]).forEach(did=>{
         const ex = DB.catalogoDocs.find(c=>c.id===did); if(!ex) return;
         const doc=getDoc('empresa',e.id,did,oid); const s=statusDoc(doc,ex);
@@ -2734,12 +2744,14 @@ function pendenciasPorEmpresa(){
     });
   });
   DB.funcionarios.forEach(f=>{
+    const _ob=DB.obras.find(o=>o.id===f.obraId); if(_ob && _ob.ativa===false) return;
     docsExigidosFuncionario(f).forEach(de=>{
       const doc=getDoc('funcionario',f.id,de.id); const s=statusDoc(doc,de);
       if(s.cls!=='ok'&&s.cls!=='info'){ const _o=DB.obras.find(o=>o.id===f.obraId); add(f.empresaId,{cat:'Colaborador',ref:f.nome,obra:_o?_o.nome:'-',obraId:f.obraId,doc:de.nome,status:s.label}); }
     });
   });
   DB.maquinas.forEach(m=>{
+    const _ob=DB.obras.find(o=>o.id===m.obraId); if(_ob && _ob.ativa===false) return;
     docsExigidosMaquina(m).forEach(de=>{
       const doc=getDoc('maquina',m.id,de.id); const s=statusDoc(doc,de);
       if(s.cls!=='ok'&&s.cls!=='info'){ const _o=DB.obras.find(o=>o.id===m.obraId); add(m.empresaId,{cat:'Máquina',ref:m.descricao,obra:_o?_o.nome:'-',obraId:m.obraId,doc:de.nome,status:s.label}); }
@@ -2787,7 +2799,7 @@ function notificarFuncionario(funcId){
   }, [], false, 'lg');
 }
 
-const APP_URL = 'https://eduardomarmo98-boop.github.io/sesmt-bm/';
+const APP_URL = 'https://sesmt.brandaoemarmo.com.br/';
 function anexoConformidadeHTML(emp){
   const fromFunc = DB.funcionarios.filter(f=>f.empresaId===emp.id).map(f=>f.obraId);
   const fromMaq  = DB.maquinas.filter(m=>m.empresaId===emp.id).map(m=>m.obraId);
@@ -2865,7 +2877,7 @@ function corpoEmailPendencias(emp, pendencias, colaboradorNome, obraIds){
     '</div>'+
     '<div style="border:1px solid #e5e7eb;border-top:none;padding:22px;border-radius:0 0 8px 8px">'+
       '<p style="margin:0 0 12px">Prezados,</p>'+
-      '<p style="margin:0 0 16px">Para a <b>'+obraTxt+'</b> foram identificadas pendências documentais da empresa e/ou dos respectivos colaboradores que precisam ser regularizadas. A regularização deve ser feita <b>pela plataforma do SESMT</b> (envio dos documentos no sistema). Prazo de análise: <b>48h</b>.</p>'+
+      '<p style="margin:0 0 16px">Para a <b>'+obraTxt+'</b> foram identificadas pendências documentais que precisam ser regularizadas. A regularização deve ser feita <b>pela plataforma do SESMT</b> (envio dos documentos no sistema). Prazo de análise: <b>48h</b>.</p>'+
       '<p style="margin:0 0 6px">Segue <b>abaixo</b> o resumo das pendências; a matriz de conformidade completa (colorida) segue <b>em anexo</b>.</p>'+
       '<table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 8px">'+
         '<thead><tr><th style="'+th+'">Obra</th><th style="'+th+'">Tipo</th><th style="'+th+'">Item</th><th style="'+th+'">Documento</th><th style="'+th+'">Situação</th></tr></thead>'+
@@ -3234,18 +3246,21 @@ function renderDownloads(){
 function renderDevolutiva(){
   const obras = escopoObras();
   if(!filtros.obraId){
+    const _termo = (filtros._buscaObra||'').toLowerCase();
+    const _lista = obras.filter(o=>!_termo || (o.nome||'').toLowerCase().includes(_termo) || (o.clienteNome||'').toLowerCase().includes(_termo) || (o.endereco||'').toLowerCase().includes(_termo));
     document.getElementById('main').innerHTML = `
       <div class="page-header">
         <div><div class="page-title">Devolutiva ao Cliente</div><div class="page-sub">Matriz de conformidade por obra, pronta para enviar</div></div>
       </div>
       <div class="card">
-        <h3 style="margin-bottom:14px">Selecione a obra:</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
-          ${obras.length===0?'<div class="empty">Cadastre uma obra primeiro</div>':obras.map(o=>`
-            <button class="btn btn-secondary" style="padding:18px;text-align:left;display:block;width:100%" onclick="filtros.obraId='${o.id}';go('devolutiva')">
-              <div style="font-weight:700;color:var(--bm-blue);font-size:16px">${o.nome}</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px">${o.endereco||''}</div>
-              <div style="font-size:12px;color:var(--muted)">Cliente: ${o.clienteNome||'-'}</div>
+        <h3 style="margin-bottom:10px">Selecione a obra:</h3>
+        <input id="buscaObraDev" placeholder="🔎 Buscar por obra ou cliente..." value="${escapeHtml(filtros._buscaObra||'')}" oninput="filtros._buscaObra=this.value;clearTimeout(window._bod);window._bod=setTimeout(function(){go('devolutiva');},250)" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
+          ${_lista.length===0?'<div class="empty">Nenhuma obra encontrada</div>':_lista.map(o=>`
+            <button class="btn btn-secondary" style="padding:14px;text-align:left;display:block;width:100%;height:auto;white-space:normal;word-break:break-word" onclick="filtros.obraId='${o.id}';go('devolutiva')">
+              <div style="font-weight:700;color:var(--bm-blue);font-size:15px;white-space:normal">${escapeHtml(o.nome)}${o.ativa===false?' <span style=&quot;font-size:10px;color:#dc2626;font-weight:400&quot;>(arquivada)</span>':''}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:normal;word-break:break-word">${escapeHtml(o.endereco||'')}</div>
+              <div style="font-size:12px;color:var(--muted);white-space:normal">Cliente: ${escapeHtml(o.clienteNome||'-')}</div>
             </button>`).join('')}
         </div>
       </div>`;
