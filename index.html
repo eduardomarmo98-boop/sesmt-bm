@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.4">
+<meta name="app-version" content="2026.06.19.5">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2866,7 +2866,11 @@ function corpoEmailPendencias(emp, pendencias, colaboradorNome, obraIds){
     '<div style="border:1px solid #e5e7eb;border-top:none;padding:22px;border-radius:0 0 8px 8px">'+
       '<p style="margin:0 0 12px">Prezados,</p>'+
       '<p style="margin:0 0 16px">Para a <b>'+obraTxt+'</b> foram identificadas pendências documentais da empresa e/ou dos respectivos colaboradores que precisam ser regularizadas. A regularização deve ser feita <b>pela plataforma do SESMT</b> (envio dos documentos no sistema). Prazo de análise: <b>48h</b>.</p>'+
-      '<p style="margin:0 0 6px">Segue <b>em anexo</b> a matriz de conformidade detalhada, com o status de cada documento (da empresa e dos colaboradores).</p>'+
+      '<p style="margin:0 0 6px">Segue <b>abaixo</b> o resumo das pendências; a matriz de conformidade completa (colorida) segue <b>em anexo</b>.</p>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 8px">'+
+        '<thead><tr><th style="'+th+'">Obra</th><th style="'+th+'">Tipo</th><th style="'+th+'">Item</th><th style="'+th+'">Documento</th><th style="'+th+'">Situação</th></tr></thead>'+
+        '<tbody>'+rows+'</tbody>'+
+      '</table>'+
       '<div style="text-align:center;margin:20px 0 6px"><a href="'+APP_URL+'" style="background:#F88800;color:#fff;text-decoration:none;padding:11px 22px;border-radius:6px;font-weight:700;display:inline-block">Acessar a plataforma</a></div>'+
       '<p style="font-size:13px;color:#555;margin:14px 0 0">Em caso de dúvida, responda este e-mail ou procure o setor SESMT da Brandão & Marmo.</p>'+
       '<p style="margin:16px 0 4px">Atenciosamente,</p>'+
