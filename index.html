@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.10">
+<meta name="app-version" content="2026.06.19.11">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -969,7 +969,7 @@ function renderPortaria(){
         '</select></div>'+
       '<div style="position:relative;width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:300px">'+
         '<div id="leitor" style="width:100%;min-height:300px"></div>'+
-        '<div id="scanOverlay" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;color:#fff;font-family:Arial,Helvetica,sans-serif"></div>'+
+        '<div id="scanOverlay" style="display:none;position:absolute;inset:0;z-index:50;overflow-y:auto;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;color:#fff;font-family:Arial,Helvetica,sans-serif"></div>'+
       '</div>'+
       '<div style="display:flex;gap:8px;margin-top:10px">'+
         '<button id="btnScan" class="btn btn-primary" style="flex:1;justify-content:center;padding:12px;font-size:16px" onclick="toggleScanner()">📷 Ligar camera</button>'+
@@ -1017,18 +1017,18 @@ function processarCodigo(txt){
   let token = String(txt||'').trim();
   if(token.indexOf(QR_PREFIX)===0) token = token.slice(QR_PREFIX.length);
   const ov = document.getElementById('scanOverlay');
-  const btnNext = '<button class="btn" style="margin-top:16px;background:#fff;color:#111;font-weight:700;padding:12px 20px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
+  const btnNext = '<button class="btn" style="margin-top:18px;background:#fff;color:#111;font-weight:700;padding:12px 22px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
   function mostrar(bg, titulo, sub, det){
     if(!ov){ return; }
     ov.style.background = bg; ov.style.display='flex';
-    ov.innerHTML = '<div style="font-size:30px;font-weight:800;line-height:1.15">'+titulo+'</div>'+
-      (sub?'<div style="font-size:19px;font-weight:700;margin-top:10px">'+sub+'</div>':'')+
-      (det?'<div style="font-size:13px;margin-top:10px;max-width:92%">'+det+'</div>':'')+
-      (_scanner?btnNext:'');
+    ov.innerHTML = '<div style="font-size:30px;font-weight:800;letter-spacing:.5px">'+titulo+'</div>'+
+      (sub?'<div style="font-size:20px;font-weight:700;margin-top:10px;padding:0 8px">'+sub+'</div>':'')+
+      (det?'<div style="font-size:15px;font-weight:600;margin-top:10px">'+det+'</div>':'')+
+      btnNext;
   }
   const func = DB.funcionarios.find(f=>f.qrToken===token);
   if(!func){
-    mostrar('rgba(180,83,9,.95)', 'QR NAO RECONHECIDO', '', 'Este cracha nao e do sistema ou foi removido.');
+    mostrar('#b45309', 'QR INVALIDO', '', 'Cracha nao reconhecido neste sistema.');
     try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){}
     return;
   }
@@ -1040,11 +1040,12 @@ function processarCodigo(txt){
   const acao = (ultimo && ultimo.tipo==='entrada') ? 'saida' : 'entrada';
   registrarAcesso(func, sit, acao);
   const ent = acao==='entrada';
-  const bg = sit.inativo ? 'rgba(220,38,38,.95)' : (ent ? (sit.liberado?'rgba(22,163,74,.95)':'rgba(220,38,38,.95)') : 'rgba(37,99,235,.95)');
-  const titulo = sit.inativo ? 'COLABORADOR INATIVO' : (ent ? (sit.liberado?'&#10003; ENTRADA LIBERADA':'&#10007; ENTRADA - PENDENCIA') : '&#8592; SAIDA REGISTRADA');
-  let det = '';
-  if(ent && sit.bloqueios.length){ det = '<b>Pendencias:</b> '+sit.bloqueios.map(function(p){ return escapeHtml(p.nome); }).join(', '); }
-  const sub = escapeHtml(func.nome)+'<br><span style="font-size:13px;font-weight:400;opacity:.95">'+escapeHtml((funcao&&funcao.nome)||'-')+' - '+escapeHtml((emp&&emp.razao)||'-')+' - '+new Date().toLocaleTimeString('pt-BR')+'</span>';
+  let bg, titulo, det='';
+  if(sit.inativo){ bg='#dc2626'; titulo='INATIVO'; }
+  else if(!ent){ bg='#2563eb'; titulo='SAIDA'; }
+  else if(sit.liberado){ bg='#16a34a'; titulo='✓ LIBERADO'; }
+  else { bg='#dc2626'; titulo='PENDENCIA'; det = sit.bloqueios.length+' documento(s) pendente(s)'; }
+  const sub = escapeHtml(func.nome)+'<br><span style="font-size:13px;font-weight:400;opacity:.95">'+escapeHtml((funcao&&funcao.nome)||'-')+' · '+escapeHtml((emp&&emp.razao)||'-')+' · '+new Date().toLocaleTimeString('pt-BR')+'</span>';
   mostrar(bg, titulo, sub, det);
   try{ if(navigator.vibrate) navigator.vibrate(sit.liberado?80:[120,60,120]); }catch(e){}
 }
