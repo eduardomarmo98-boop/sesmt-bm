@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.1">
+<meta name="app-version" content="2026.06.19.2">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -245,14 +245,15 @@
   }
   /* ===== DEVOLUTIVA: linhas/colunas compactas ===== */
   #devolutivaEl table td, #devolutivaEl table th{ padding:3px 5px !important; font-size:10px !important; line-height:1.2 }
-  /* ===== IMPRESSAO ===== */
+  /* ===== IMPRESSAO (mantem as cores da tela) ===== */
   @media print {
     .topbar, .sidebar, .sidebar-backdrop, #updateBar, .footer, .hamb, .btn, .filtros-box, .page-header, .toast, .modal-bg{ display:none !important }
     .layout{ display:block !important }
     .main{ margin:0 !important; padding:0 !important }
-    body{ background:#fff !important }
+    html, body{ background:#fff !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important }
+    #devolutivaEl, #devolutivaEl *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important }
     #devolutivaEl{ box-shadow:none !important; border:none !important; padding:0 !important; overflow:visible !important }
-    #devolutivaEl table td, #devolutivaEl table th{ padding:2px 4px !important; font-size:9px !important }
+    #devolutivaEl table td, #devolutivaEl table th{ padding:2px 4px !important; font-size:10px !important }
     table{ page-break-inside:auto } tr{ page-break-inside:avoid }
     @page{ size: landscape; margin: 8mm }
   }
@@ -1004,10 +1005,17 @@ function pararScanner(){
 
 function onScan(txt){
   const agora = Date.now();
-  if(agora - _ultimaLeitura < 4000) return;
-  if(txt===_ultimoCodigo && agora - _ultimaLeitura < 9000) return;
+  if(agora - _ultimaLeitura < 1500) return;
   _ultimaLeitura = agora; _ultimoCodigo = txt;
+  // trava a leitura assim que le um QR (evita registrar varias vezes o mesmo)
+  if(_scanner){ try{ _scanner.pause(true); }catch(e){ try{ pararScanner(); }catch(e2){} } }
   processarCodigo(txt);
+}
+function retomarScanner(){
+  _ultimaLeitura = 0; _ultimoCodigo = '';
+  const box = document.getElementById('resultadoAcesso'); if(box) box.innerHTML='';
+  if(_scanner){ try{ _scanner.resume(); return; }catch(e){} _scanner=null; }
+  toggleScanner();
 }
 function leituraManual(){
   const c = prompt('Codigo do cracha:');
@@ -1018,9 +1026,10 @@ function processarCodigo(txt){
   let token = String(txt||'').trim();
   if(token.indexOf(QR_PREFIX)===0) token = token.slice(QR_PREFIX.length);
   const box = document.getElementById('resultadoAcesso');
+  const btnNext = '<button class="btn btn-primary" style="margin-top:14px;width:100%;justify-content:center;padding:12px;font-size:16px" onclick="retomarScanner()">&#128247; Ler proximo colaborador</button>';
   const func = DB.funcionarios.find(f=>f.qrToken===token);
   if(!func){
-    if(box) box.innerHTML = '<div style="border:3px solid #f59e0b;border-radius:12px;padding:16px;text-align:center"><div style="font-size:22px;font-weight:800;color:#b45309">QR NAO RECONHECIDO</div><div style="color:var(--muted);font-size:13px;margin-top:6px">Esse cracha nao e deste sistema ou o colaborador foi removido.</div></div>';
+    if(box) box.innerHTML = '<div style="border:3px solid #f59e0b;border-radius:12px;padding:16px;text-align:center"><div style="font-size:22px;font-weight:800;color:#b45309">QR NAO RECONHECIDO</div><div style="color:var(--muted);font-size:13px;margin-top:6px">Esse cracha nao e deste sistema ou o colaborador foi removido.</div></div>' + (_scanner?btnNext:'');
     try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){}
     return;
   }
@@ -1046,7 +1055,7 @@ function processarCodigo(txt){
       '<div style="color:var(--muted);font-size:13px">'+escapeHtml((funcao&&funcao.nome)||'-')+' - '+escapeHtml((emp&&emp.razao)||'-')+'</div>'+
       '<div style="margin-top:6px;font-size:13px">Registrado: <b>'+(_portaria.modo==='entrada'?'ENTRADA':'SAIDA')+'</b> as '+new Date().toLocaleTimeString('pt-BR')+'</div>'+
       det+
-    '</div>';
+    '</div>' + (_scanner?btnNext:'');
   try{ if(navigator.vibrate) navigator.vibrate(sit.liberado?80:[120,60,120]); }catch(e){}
 }
 
@@ -1296,15 +1305,40 @@ async function gerarCrachaPNG(func){
   if(qrURI){ const qi=await carregarImg(qrURI); if(qi) ctx.drawImage(qi,(W-qrSize)/2, H-qrSize-22, qrSize, qrSize); }
   return cv.toDataURL('image/png');
 }
+function corpoEmailCracha(d){
+  const linha = (lbl,v)=> v ? '<tr><td style="padding:5px 12px;color:#6b7280;font-size:13px">'+lbl+'</td><td style="padding:5px 12px;font-weight:700;font-size:13px">'+v+'</td></tr>' : '';
+  return '<div style="font-family:Arial,Helvetica,sans-serif;color:#222;max-width:620px;margin:0 auto">'+
+    '<div style="background:#1a3d7c;padding:16px 20px;border-radius:8px 8px 0 0">'+
+      '<span style="color:#fff;font-size:18px;font-weight:800">BRANDÃO<span style="color:#F88800">&amp;MARMO</span></span>'+
+      '<span style="color:#cdd8ec;font-size:12px;margin-left:10px">SESMT • Crachá de acesso</span>'+
+    '</div>'+
+    '<div style="border:1px solid #e5e7eb;border-top:none;padding:22px;border-radius:0 0 8px 8px">'+
+      '<p style="margin:0 0 12px">Prezados <b>'+(d.empresa||'')+'</b>,</p>'+
+      '<p style="margin:0 0 14px">Segue o <b>crachá de acesso</b> do colaborador abaixo. O arquivo com o QR Code está <b>em anexo</b> neste e-mail.</p>'+
+      '<table style="border-collapse:collapse;margin:0 0 14px;background:#f9fafb;border-radius:6px">'+
+        linha('Colaborador', d.colaborador)+linha('CPF', d.cpf)+linha('Função', d.funcao)+linha('Empresa', d.empresa)+linha('Obra', d.obra)+
+      '</table>'+
+      '<div style="background:#fff7ed;border-left:4px solid #F88800;padding:10px 14px;font-size:13px;margin:0 0 14px">Apresente o QR Code na <b>portaria da obra</b> para registrar entrada e saída. O crachá é <b>pessoal e intransferível</b>.</div>'+
+      '<p style="margin:16px 0 4px">Atenciosamente,</p>'+
+      '<img src="'+APP_URL+'assinatura-email.png" alt="Brandão & Marmo - SESMT" style="max-width:520px;width:100%;border:0;display:block">'+
+    '</div>'+
+    '<div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:10px">Mensagem automática • Brandão &amp; Marmo Engenharia • SESMT</div>'+
+  '</div>';
+}
 async function enviarCrachaColaborador(func){
   try{
     const emp = DB.empresas.find(e=>e.id===func.empresaId);
     if(!emp || !emp.email) return;
     const png = await gerarCrachaPNG(func);
     const obra = DB.obras.find(o=>o.id===func.obraId);
+    const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
+    const obraNome = obra?obra.nome:'';
+    const assunto = (obraNome?obraNome+' — ':'')+'Crachá de acesso — '+(func.nome||'')+(func.cpf?(' (CPF '+func.cpf+')'):'');
+    const htmlCracha = corpoEmailCracha({colaborador:func.nome, cpf:func.cpf, funcao:funcao?funcao.nome:'', empresa:emp.razao, obra:obraNome});
     const ok = await enviarWebhook({evento:'cracha_colaborador', dados:{
       empresaEmail:emp.email, empresaNome:emp.razao, colaborador:func.nome, cpf:func.cpf,
-      obra:obra?obra.nome:'', arquivoNome:'cracha_'+safeName(func.nome||'colaborador')+'.png', pngBase64:(png&&png.indexOf(',')>=0?png.split(',')[1]:png)
+      obra:obraNome, funcao:funcao?funcao.nome:'', assunto:assunto, html:htmlCracha,
+      arquivoNome:'cracha_'+safeName(func.nome||'colaborador')+'.png', pngBase64:(png&&png.indexOf(',')>=0?png.split(',')[1]:png)
     }});
     if(ok) toast('Cracha enviado a empresa por e-mail');
   }catch(e){ console.error('cracha email', e); }
@@ -2699,20 +2733,20 @@ function pendenciasPorEmpresa(){
       (obra.docsEmpresa||[]).forEach(did=>{
         const ex = DB.catalogoDocs.find(c=>c.id===did); if(!ex) return;
         const doc=getDoc('empresa',e.id,did,oid); const s=statusDoc(doc,ex);
-        if(s.cls!=='ok'&&s.cls!=='info') add(e.id,{cat:'Empresa',ref:`${e.razao} (${obra.nome})`,doc:ex.nome,status:s.label});
+        if(s.cls!=='ok'&&s.cls!=='info') add(e.id,{cat:'Empresa',ref:e.razao,obra:obra.nome,obraId:oid,doc:ex.nome,status:s.label});
       });
     });
   });
   DB.funcionarios.forEach(f=>{
     docsExigidosFuncionario(f).forEach(de=>{
       const doc=getDoc('funcionario',f.id,de.id); const s=statusDoc(doc,de);
-      if(s.cls!=='ok'&&s.cls!=='info') add(f.empresaId,{cat:'Colaborador',ref:f.nome,doc:de.nome,status:s.label});
+      if(s.cls!=='ok'&&s.cls!=='info'){ const _o=DB.obras.find(o=>o.id===f.obraId); add(f.empresaId,{cat:'Colaborador',ref:f.nome,obra:_o?_o.nome:'-',obraId:f.obraId,doc:de.nome,status:s.label}); }
     });
   });
   DB.maquinas.forEach(m=>{
     docsExigidosMaquina(m).forEach(de=>{
       const doc=getDoc('maquina',m.id,de.id); const s=statusDoc(doc,de);
-      if(s.cls!=='ok'&&s.cls!=='info') add(m.empresaId,{cat:'Máquina',ref:m.descricao,doc:de.nome,status:s.label});
+      if(s.cls!=='ok'&&s.cls!=='info'){ const _o=DB.obras.find(o=>o.id===m.obraId); add(m.empresaId,{cat:'Máquina',ref:m.descricao,obra:_o?_o.nome:'-',obraId:m.obraId,doc:de.nome,status:s.label}); }
     });
   });
   return grupos;
@@ -2725,10 +2759,11 @@ function notificarEmpresa(empresaId){
   const obraIds = [...new Set([...DB.funcionarios.filter(f=>f.empresaId===emp.id).map(f=>f.obraId),...DB.maquinas.filter(m=>m.empresaId===emp.id).map(m=>m.obraId),...(emp.obraIds||[])])].filter(Boolean);
   const allCc = new Set();
   obraIds.forEach(oid=>destinatariosObra(oid).cc.forEach(c=>allCc.add(c)));
+  const assunto = assuntoPendencias(emp, grupos[empresaId]);
   showModal(`Notificar: ${emp.razao}`, previewEmail(emp, grupos[empresaId]), async ()=>{
-    const html = previewEmail(emp, grupos[empresaId]);
-    const ok = await enviarWebhook({to:emp.email, cc:[...allCc], subject:`SESMT Brandão & Marmo — Documentos pendentes: ${emp.razao}`, html, pendencias:grupos[empresaId], empresa:emp.razao});
-    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:[...allCc].join(';'),assunto:`SESMT Brandão & Marmo — Documentos pendentes: ${emp.razao}`,itens:grupos[empresaId].length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
+    const html = corpoEmailPendencias(emp, grupos[empresaId]);
+    const ok = await enviarWebhook({to:emp.email, cc:[...allCc], subject:assunto, html, pendencias:grupos[empresaId], empresa:emp.razao});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:[...allCc].join(';'),assunto:assunto,itens:grupos[empresaId].length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
     save(); toast(ok?'E-mail enviado via webhook':'Webhook não configurado - apenas registrado'); return true;
   }, [], false, 'lg');
 }
@@ -2739,40 +2774,72 @@ function notificarFuncionario(funcId){
   const pend = [];
   docsExigidosFuncionario(f).forEach(de=>{
     const doc=getDoc('funcionario',f.id,de.id); const s=statusDoc(doc,de);
-    if(s.cls!=='ok'&&s.cls!=='info') pend.push({cat:'Colaborador',ref:f.nome,doc:de.nome,status:s.label});
+    if(s.cls!=='ok'&&s.cls!=='info'){ const _o=DB.obras.find(o=>o.id===f.obraId); pend.push({cat:'Colaborador',ref:f.nome,obra:_o?_o.nome:'-',obraId:f.obraId,doc:de.nome,status:s.label}); }
   });
   if(pend.length===0){ toast('Colaborador sem pendências'); return; }
   const dest = destinatariosObra(f.obraId);
+  const assunto = assuntoPendencias(emp, pend, f.nome);
   showModal(`Notificar pendências de ${f.nome}`, previewEmail(emp, pend, f.nome, [f.obraId]), async ()=>{
-    const html = previewEmail(emp, pend, f.nome, [f.obraId]);
-    const ok = await enviarWebhook({to:emp.email, cc:dest.cc, subject:`SESMT Brandão & Marmo — Documentos pendentes: ${f.nome}`, html, pendencias:pend, colaborador:f.nome, empresa:emp.razao});
-    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:dest.cc.join(';'),assunto:`SESMT Brandão & Marmo — Documentos pendentes: ${f.nome}`,itens:pend.length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
+    const html = corpoEmailPendencias(emp, pend, f.nome, [f.obraId]);
+    const ok = await enviarWebhook({to:emp.email, cc:dest.cc, subject:assunto, html, pendencias:pend, colaborador:f.nome, empresa:emp.razao});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:dest.cc.join(';'),assunto:assunto,itens:pend.length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
     save(); toast(ok?'E-mail enviado via webhook':'Sem webhook - registrado'); return true;
   }, [], false, 'lg');
 }
 
+const APP_URL = 'https://eduardomarmo98-boop.github.io/sesmt-bm/';
+function assuntoPendencias(emp, pendencias, colaboradorNome){
+  const obras = [...new Set((pendencias||[]).map(p=>p.obra).filter(Boolean))];
+  const pre = obras.length===1 ? (obras[0]+' — ') : '';
+  const quem = colaboradorNome ? colaboradorNome : emp.razao;
+  const n = pendencias ? pendencias.length : 0;
+  return 'Brandão & Marmo SESMT • '+pre+'Documentos pendentes ('+n+') — '+quem;
+}
+function corpoEmailPendencias(emp, pendencias, colaboradorNome, obraIds){
+  const n = pendencias ? pendencias.length : 0;
+  const corStatus = s=>{ s=String(s||''); if(/vencid|recus/i.test(s)) return '#dc2626'; if(/vence/i.test(s)) return '#d97706'; return '#6b7280'; };
+  const td = 'border:1px solid #e5e7eb;padding:7px 9px;text-align:left';
+  const th = 'background:#1a3d7c;color:#fff;padding:8px 9px;text-align:left';
+  const rows = (pendencias||[]).map(p=>'<tr>'+
+    '<td style="'+td+'">'+(p.obra||'-')+'</td>'+
+    '<td style="'+td+'">'+p.cat+'</td>'+
+    '<td style="'+td+'">'+p.ref+'</td>'+
+    '<td style="'+td+'">'+p.doc+'</td>'+
+    '<td style="'+td+'"><b style="color:'+corStatus(p.status)+'">'+p.status+'</b></td>'+
+  '</tr>').join('');
+  const cnpj = emp.cnpj ? (' — CNPJ '+emp.cnpj) : '';
+  const intro = colaboradorNome
+    ? 'Identificamos pendências documentais do colaborador <b>'+colaboradorNome+'</b> (empresa <b>'+emp.razao+'</b>'+cnpj+').'
+    : 'Identificamos pendências documentais da empresa <b>'+emp.razao+'</b>'+cnpj+'.';
+  return '<div style="font-family:Arial,Helvetica,sans-serif;color:#222;max-width:660px;margin:0 auto">'+
+    '<div style="background:#1a3d7c;padding:16px 20px;border-radius:8px 8px 0 0">'+
+      '<span style="color:#fff;font-size:18px;font-weight:800">BRANDÃO<span style="color:#F88800">&amp;MARMO</span></span>'+
+      '<span style="color:#cdd8ec;font-size:12px;margin-left:10px">SESMT • Segurança e Saúde no Trabalho</span>'+
+    '</div>'+
+    '<div style="border:1px solid #e5e7eb;border-top:none;padding:22px;border-radius:0 0 8px 8px">'+
+      '<p style="margin:0 0 12px">Prezados,</p>'+
+      '<p style="margin:0 0 12px">'+intro+' Foram encontradas <b>'+n+' pendência(s)</b> que precisam ser regularizadas para a liberação e a manutenção do acesso à obra.</p>'+
+      '<div style="background:#fff7ed;border-left:4px solid #F88800;padding:10px 14px;font-size:14px;margin:0 0 16px">A regularização deve ser feita <b>pela plataforma SESMT</b> (envio dos documentos no sistema). Prazo de análise: <b>até 48h</b> após o envio.</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:13px">'+
+        '<thead><tr><th style="'+th+'">Obra</th><th style="'+th+'">Tipo</th><th style="'+th+'">Item</th><th style="'+th+'">Documento</th><th style="'+th+'">Situação</th></tr></thead>'+
+        '<tbody>'+rows+'</tbody>'+
+      '</table>'+
+      '<div style="text-align:center;margin:20px 0 6px"><a href="'+APP_URL+'" style="background:#F88800;color:#fff;text-decoration:none;padding:11px 22px;border-radius:6px;font-weight:700;display:inline-block">Acessar a plataforma</a></div>'+
+      '<p style="font-size:13px;color:#555;margin:14px 0 0">Em caso de dúvida, responda este e-mail ou procure o setor SESMT da Brandão & Marmo.</p>'+
+      '<p style="margin:16px 0 4px">Atenciosamente,</p>'+
+      '<img src="'+APP_URL+'assinatura-email.png" alt="Brandão & Marmo - SESMT" style="max-width:520px;width:100%;border:0;display:block">'+
+    '</div>'+
+    '<div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:10px">Mensagem automática • Brandão &amp; Marmo Engenharia • SESMT</div>'+
+  '</div>';
+}
 function previewEmail(emp, pendencias, colaboradorNome, obraIds){
-  // coletar todas obras envolvidas
   const obras = obraIds && obraIds.length ? obraIds : [...new Set(DB.funcionarios.filter(f=>f.empresaId===emp.id).map(f=>f.obraId).concat(DB.maquinas.filter(m=>m.empresaId===emp.id).map(m=>m.obraId)))].filter(Boolean);
   const allCc = new Set();
   obras.forEach(oid=>destinatariosObra(oid).cc.forEach(c=>allCc.add(c)));
-  return `
-    <div style="font-family:monospace;font-size:12px;line-height:1.7;background:#f9fafb;padding:12px;border-radius:6px">
-      <b>De:</b> ${DB.config.smtp.remetente}<br>
-      <b>Para:</b> ${emp.email}<br>
-      <b>Cc:</b> ${[...allCc].join('; ')||'(nenhum)'}<br>
-      <b>Assunto:</b> SESMT Brandão & Marmo — Documentos pendentes: ${colaboradorNome||emp.razao}
-    </div>
-    <div style="margin-top:14px">
-      <p>Prezados,</p>
-      <p>Foram identificadas pendências documentais ${colaboradorNome?`do colaborador <b>${colaboradorNome}</b>`:`da empresa <b>${emp.razao}</b>`} que precisam ser regularizadas. A regularização deve ser feita <b>pela plataforma do SESMT</b> (envio dos documentos no sistema). Prazo de análise: 48h.</p>
-      <table>
-        <thead><tr><th>Categoria</th><th>Item</th><th>Documento</th><th>Situação</th></tr></thead>
-        <tbody>${pendencias.map(p=>`<tr><td>${p.cat}</td><td>${p.ref}</td><td>${p.doc}</td><td><span class="status ${p.status.includes('Vence')?'warn':p.status==='VENCIDO'||p.status==='RECUSADO'?'crit':'pendente'}">${p.status}</span></td></tr>`).join('')}</tbody>
-      </table>
-      <p style="margin-top:14px">Atenciosamente,</p><img src="https://eduardomarmo98-boop.github.io/sesmt-bm/assinatura-email.png" alt="Brandão & Marmo - SESMT" style="max-width:520px;width:100%;margin-top:6px;border:0;display:block">
-    </div>
-  `;
+  const rem = (DB.config.smtp && DB.config.smtp.remetente) || 'sesmt@brandaoemarmo.com.br';
+  return '<div style="font-family:monospace;font-size:12px;line-height:1.7;background:#f9fafb;padding:12px;border-radius:6px;margin-bottom:14px">'+
+    '<b>De:</b> '+rem+'<br><b>Para:</b> '+emp.email+'<br><b>Cc:</b> '+([...allCc].join('; ')||'(nenhum)')+'<br><b>Assunto:</b> '+assuntoPendencias(emp, pendencias, colaboradorNome)+
+    '</div>'+corpoEmailPendencias(emp, pendencias, colaboradorNome, obraIds);
 }
 
 function enviarNotificacoesEmLote(){
@@ -2782,7 +2849,7 @@ function enviarNotificacoesEmLote(){
   if(!confirm(`Enviar ${ids.length} notificação(ões)? ${DB.config.smtp.host?'':'(SMTP não configurado — apenas histórico)'}`)) return;
   ids.forEach(eid=>{
     const emp = DB.empresas.find(e=>e.id==eid);
-    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,assunto:`SESMT Brandão & Marmo — Documentos pendentes: ${emp.razao}`,itens:grupos[eid].length,enviadoPor:session.nome});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,assunto:assuntoPendencias(emp, grupos[eid]),itens:grupos[eid].length,enviadoPor:session.nome});
   });
   save(); toast(`${ids.length} notificação(ões) ${DB.config.smtp.host?'enviadas':'simuladas'}`);
   if(currentPage==='notificacoes') go('notificacoes');
