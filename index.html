@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.6">
+<meta name="app-version" content="2026.06.19.7">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1927,7 +1927,6 @@ function renderEmpresas(){
             <td><span class="status ${cls}">${s.ok}/${s.total}</span></td>
             <td class="small-actions">
               <button class="btn btn-secondary btn-sm" onclick="verDocsRef('empresa',${e.id},'${esc(e.razao)}')">📄</button>
-              ${pode('notificar')?`<button class="btn btn-warn btn-sm" onclick="notificarEmpresa(${e.id})">✉️</button>`:''}
               ${canEdit?`<button class="btn btn-secondary btn-sm" onclick="editEmpresa(${e.id})">Editar</button>`:''}
             </td>
           </tr>`;
@@ -2770,7 +2769,7 @@ function notificarEmpresa(empresaId){
   const assunto = assuntoPendencias(emp, grupos[empresaId]);
   showModal(`Notificar: ${emp.razao}`, previewEmail(emp, grupos[empresaId]), async ()=>{
     const html = corpoEmailPendencias(emp, grupos[empresaId]);
-    const anexoHtml = anexoConformidadeHTML(emp);
+    const anexoHtml = anexoConformidadeHTML(emp, grupos[empresaId]);
     const anexoNome = 'Conformidade - '+emp.razao+'.html';
     const ok = await enviarWebhook({to:emp.email, cc:[...allCc], subject:assunto, html, anexoHtml, anexoNome, pendencias:grupos[empresaId], empresa:emp.razao});
     DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:[...allCc].join(';'),assunto:assunto,itens:grupos[empresaId].length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
@@ -2791,7 +2790,7 @@ function notificarFuncionario(funcId){
   const assunto = assuntoPendencias(emp, pend, f.nome);
   showModal(`Notificar pendências de ${f.nome}`, previewEmail(emp, pend, f.nome, [f.obraId]), async ()=>{
     const html = corpoEmailPendencias(emp, pend, f.nome, [f.obraId]);
-    const anexoHtml = anexoConformidadeHTML(emp);
+    const anexoHtml = anexoConformidadeHTML(emp, pend);
     const anexoNome = 'Conformidade - '+emp.razao+'.html';
     const ok = await enviarWebhook({to:emp.email, cc:dest.cc, subject:assunto, html, anexoHtml, anexoNome, pendencias:pend, colaborador:f.nome, empresa:emp.razao});
     DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:dest.cc.join(';'),assunto:assunto,itens:pend.length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
@@ -2800,56 +2799,22 @@ function notificarFuncionario(funcId){
 }
 
 const APP_URL = 'https://sesmt.brandaoemarmo.com.br/';
-function anexoConformidadeHTML(emp){
-  const fromFunc = DB.funcionarios.filter(f=>f.empresaId===emp.id).map(f=>f.obraId);
-  const fromMaq  = DB.maquinas.filter(m=>m.empresaId===emp.id).map(m=>m.obraId);
-  const obraIds = [...new Set([...(emp.obraIds||[]), ...fromFunc, ...fromMaq])].filter(Boolean);
-  const obrasAll = obraIds.map(id=>DB.obras.find(o=>o.id===id)).filter(Boolean);
+function anexoConformidadeHTML(emp, pendencias){
   const escA = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const cell = (txt,bg)=>'<td style="background:'+bg+';color:#fff;text-align:center;font-weight:700;border:1px solid #fff;padding:5px 7px">'+txt+'</td>';
-  function statusCell(doc, ex){
-    const s = statusDoc(doc, ex);
-    if(s.cls==='ok') return cell('OK','#16a34a');
-    if(s.cls==='pendente'||s.cls==='warn'||s.cls==='crit'||s.cls==='info') return cell('PENDENTE','#dc2626');
-    return cell('-','#9ca3af');
-  }
-  const thS = 'background:#1a3d7c;color:#fff;padding:7px 9px;text-align:left;font-size:11px';
-  const tdS = 'padding:5px 9px;border:1px solid #e5e7eb';
-  let body = '';
-  obrasAll.forEach(obra=>{
-    const colsEmpresa = (obra.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
-    const colabs = DB.funcionarios.filter(f=>f.obraId===obra.id && f.empresaId===emp.id);
-    const set = new Set(obra.docsFuncionarioBase||[]);
-    colabs.forEach(f=>{ const fn=DB.catalogoFuncoes.find(c=>c.id==f.funcaoId); ((fn&&fn.docsIds)||[]).forEach(d=>set.add(d)); });
-    const colsColab = [...set].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
-    body += '<h2 style="font-size:15px;color:#1a3d7c;margin:20px 0 6px">'+escA(obra.nome)+'</h2>';
-    if(colsEmpresa.length){
-      body += '<h3 style="font-size:12px;color:#1a3d7c;margin:8px 0 4px">EMPRESA</h3>'+
-        '<table style="border-collapse:collapse;font-size:11px;margin-bottom:10px"><thead><tr><th style="'+thS+'">Empresa</th>'+
-        colsEmpresa.map(c=>'<th style="'+thS+'">'+escA(c.nome)+'</th>').join('')+'</tr></thead><tbody><tr>'+
-        '<td style="'+tdS+'"><b>'+escA(emp.razao)+'</b></td>'+
-        colsEmpresa.map(de=>statusCell(getDoc('empresa',emp.id,de.id,obra.id),de)).join('')+'</tr></tbody></table>';
-    }
-    if(colabs.length && colsColab.length){
-      body += '<h3 style="font-size:12px;color:#1a3d7c;margin:8px 0 4px">COLABORADORES</h3>'+
-        '<table style="border-collapse:collapse;font-size:11px"><thead><tr><th style="'+thS+'">Colaborador</th>'+
-        colsColab.map(c=>'<th style="'+thS+'">'+escA(c.nome)+'</th>').join('')+'</tr></thead><tbody>'+
-        colabs.map(f=>{ const fn=DB.catalogoFuncoes.find(c=>c.id==f.funcaoId); const exig=new Set([...(obra.docsFuncionarioBase||[]),...((fn&&fn.docsIds)||[])]);
-          return '<tr><td style="'+tdS+'"><b>'+escA(f.nome)+'</b><div style="font-size:9px;color:#888">'+escA((fn&&fn.nome)||'')+'</div></td>'+
-            colsColab.map(de=>{ if(!exig.has(de.id)) return cell('N/A','#9ca3af'); return statusCell(getDoc('funcionario',f.id,de.id),de); }).join('')+'</tr>';
-        }).join('')+'</tbody></table>';
-    }
-  });
-  if(!body) body = '<p>Sem itens de conformidade para exibir.</p>';
+  const cor = s=>{ s=String(s||''); if(/vencid|recus/i.test(s)) return '#dc2626'; if(/vence/i.test(s)) return '#d97706'; return '#6b7280'; };
+  const th='background:#1a3d7c;color:#fff;padding:8px 9px;text-align:left;font-size:12px';
+  const td='border:1px solid #e5e7eb;padding:7px 9px;font-size:12px';
+  const lista = pendencias||[];
+  const rows = lista.map(p=>'<tr><td style="'+td+'">'+escA(p.obra)+'</td><td style="'+td+'">'+escA(p.cat)+'</td><td style="'+td+'">'+escA(p.ref)+'</td><td style="'+td+'">'+escA(p.doc)+'</td><td style="'+td+'"><b style="color:'+cor(p.status)+'">'+escA(p.status)+'</b></td></tr>').join('');
+  const tabela = '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'">Obra</th><th style="'+th+'">Tipo</th><th style="'+th+'">Item</th><th style="'+th+'">Documento</th><th style="'+th+'">Situação</th></tr></thead><tbody>'+rows+'</tbody></table>';
   return '<!doctype html><html lang="pt-br"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'+
-    '<title>Conformidade - '+escA(emp.razao)+'</title></head>'+
+    '<title>Documentos pendentes - '+escA(emp.razao)+'</title></head>'+
     '<body style="font-family:Arial,Helvetica,sans-serif;color:#222;margin:24px">'+
     '<div style="border-bottom:3px solid #1a3d7c;padding-bottom:8px;margin-bottom:6px">'+
       '<span style="font-size:20px;font-weight:800;color:#1a3d7c">BRANDÃO<span style="color:#F88800">&amp;MARMO</span></span> '+
-      '<span style="color:#666;font-size:12px">SESMT &bull; Matriz de Conformidade</span></div>'+
-    '<div style="font-size:12px;color:#666;margin-bottom:4px">Empresa: <b>'+escA(emp.razao)+'</b> &bull; Emitido em '+new Date().toLocaleDateString('pt-BR')+'</div>'+
-    '<div style="font-size:11px;color:#16a34a;margin-bottom:10px">Legenda: OK = regular &nbsp;|&nbsp; <span style="color:#dc2626">PENDENTE = regularizar</span> &nbsp;|&nbsp; <span style="color:#9ca3af">N/A = nao exigido</span></div>'+
-    body+'</body></html>';
+      '<span style="color:#666;font-size:12px">SESMT &bull; Documentos pendentes</span></div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:10px">Empresa: <b>'+escA(emp.razao)+'</b> &bull; Emitido em '+new Date().toLocaleDateString('pt-BR')+'</div>'+
+    tabela+'</body></html>';
 }
 function assuntoPendencias(emp, pendencias, colaboradorNome){
   const obras = [...new Set((pendencias||[]).map(p=>p.obra).filter(Boolean))];
