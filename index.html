@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.17.13">
+<meta name="app-version" content="2026.06.19.1">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -243,6 +243,19 @@
     .filtro-select{max-width:100%;width:100%}
     .filtro-item{min-width:140px;flex:1}
   }
+  /* ===== DEVOLUTIVA: linhas/colunas compactas ===== */
+  #devolutivaEl table td, #devolutivaEl table th{ padding:3px 5px !important; font-size:10px !important; line-height:1.2 }
+  /* ===== IMPRESSAO ===== */
+  @media print {
+    .topbar, .sidebar, .sidebar-backdrop, #updateBar, .footer, .hamb, .btn, .filtros-box, .page-header, .toast, .modal-bg{ display:none !important }
+    .layout{ display:block !important }
+    .main{ margin:0 !important; padding:0 !important }
+    body{ background:#fff !important }
+    #devolutivaEl{ box-shadow:none !important; border:none !important; padding:0 !important; overflow:visible !important }
+    #devolutivaEl table td, #devolutivaEl table th{ padding:2px 4px !important; font-size:9px !important }
+    table{ page-break-inside:auto } tr{ page-break-inside:avoid }
+    @page{ size: landscape; margin: 8mm }
+  }
 </style>
 </head>
 <body>
@@ -273,6 +286,7 @@
       <input id="loginPass" name="password" autocomplete="current-password" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Entrar</button>
+    <div style="text-align:center;margin-top:12px"><a href="#" onclick="esqueciSenha();return false" style="color:var(--bm-blue);font-size:13px;text-decoration:underline;cursor:pointer">Esqueci minha senha</a></div>
     <div class="login-foot">© 2026 Brandão &amp; Marmo · Todos os direitos reservados</div>
   </div>
 </div>
@@ -641,6 +655,39 @@ function checarMfaDiario(){
 setInterval(checarMfaDiario, 60000);
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') checarMfaDiario(); });
 async function atualizarDados(){ try{ toast('Atualizando...'); await loadFromSupabase(); go(currentPage); toast('Dados atualizados'); }catch(e){ toast('Erro ao atualizar','err'); } }
+
+/* ===== ESQUECI MINHA SENHA ===== */
+async function esqueciSenha(){
+  var email = (document.getElementById('loginUser').value||'').trim().toLowerCase();
+  if(!email){ toast('Digite seu e-mail no campo acima primeiro.','warn'); return; }
+  toast('Enviando link de recuperacao...');
+  var redir = window.location.origin + window.location.pathname;
+  const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: redir});
+  if(error){ toast('Erro: '+error.message,'err'); return; }
+  toast('Se o e-mail estiver cadastrado, enviamos um link. Veja a caixa de entrada (e o spam).');
+}
+function abrirModalNovaSenha(){
+  showModal('Definir nova senha',
+    '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">Voce abriu o link de recuperacao. Defina sua nova senha de acesso.</p>'+
+    '<div class="form-group"><label>Nova senha</label><input id="novaSenha1" type="password" autocomplete="new-password" placeholder="minimo 6 caracteres"></div>'+
+    '<div class="form-group"><label>Confirmar senha</label><input id="novaSenha2" type="password" autocomplete="new-password" placeholder="repita a senha"></div>',
+    salvarNovaSenha, [], false);
+}
+async function salvarNovaSenha(){
+  var p1 = document.getElementById('novaSenha1').value;
+  var p2 = document.getElementById('novaSenha2').value;
+  if((p1||'').length < 6){ toast('Senha muito curta (minimo 6 caracteres).','warn'); return false; }
+  if(p1 !== p2){ toast('As senhas nao conferem.','warn'); return false; }
+  const {error} = await sb.auth.updateUser({password:p1});
+  if(error){ toast('Erro: '+error.message,'err'); return false; }
+  toast('Senha alterada! Faca login com a nova senha.');
+  try{ await sb.auth.signOut(); }catch(e){}
+  setTimeout(function(){ location.href = location.pathname; }, 1600);
+  return true;
+}
+sb.auth.onAuthStateChange(function(event){
+  if(event === 'PASSWORD_RECOVERY'){ abrirModalNovaSenha(); }
+});
 
 /* ===== 2FA (TOTP) ===== */
 // Modal de cadastro do 2FA (primeira vez do usuário). Resolve true se enrolment OK.
@@ -1048,7 +1095,7 @@ function renderEfetivo(){
   const stat = (num,label,cor)=>'<div class="card" style="text-align:center;padding:14px"><div style="font-size:30px;font-weight:800;'+(cor?'color:'+cor:'')+'">'+num+'</div><div style="color:var(--muted);font-size:12px">'+label+'</div></div>';
   document.getElementById('main').innerHTML =
     '<div class="page-header"><div><div class="page-title">Efetivo do Dia</div><div class="page-sub">Entradas e saidas registradas na portaria</div></div>'+
-      (pode('*')?'<button class="btn btn-primary" style="margin-right:6px" onclick="enviarEfetivoGrupoAgora()">Enviar ao grupo agora</button>':'')+'<button class="btn btn-secondary" onclick="exportarEfetivoCSV()">Exportar CSV</button></div>'+
+      (pode('*')?'<button class="btn btn-primary" style="margin-right:6px" onclick="enviarEfetivoGrupoAgora()">Enviar ao grupo agora</button>':'')+'<button class="btn btn-secondary" style="margin-right:6px" onclick="imprimirEfetivo()">&#128424;&#65039; Imprimir</button><button class="btn btn-secondary" onclick="exportarEfetivoCSV()">Exportar CSV</button></div>'+
     '<div class="filtros-box"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'+
       '<label style="font-size:13px">Dia <input type="date" value="'+dia+'" onchange="filtros._dia=this.value;renderEfetivo()" style="margin-left:6px"></label>'+
       '<label style="font-size:13px">Obra <select onchange="filtros._efObra=this.value;renderEfetivo()" style="margin-left:6px;max-width:260px">'+
@@ -1098,6 +1145,49 @@ function exportarEfetivoCSV(){
   const csv = linhas.map(l=>l.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='efetivo_'+dia+'.csv'; a.click();
+}
+
+function imprimirEfetivo(){
+  const dia = filtros._dia || hoje();
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
+  let acc = DB.acessos.filter(a=>String(a.momento||'').slice(0,10)===dia);
+  if(obraSel) acc = acc.filter(a=>String(a.obraId)===String(obraSel));
+  acc.sort((a,b)=>(a.momento<b.momento?-1:1));
+  const nomeFunc = fid=>{const f=DB.funcionarios.find(x=>String(x.id)===String(fid));return f?f.nome:'#'+fid;};
+  const empFunc = fid=>{const f=DB.funcionarios.find(x=>String(x.id)===String(fid));const e=f&&DB.empresas.find(x=>x.id===f.empresaId);return e?e.razao:'-';};
+  const funcaoFunc = fid=>{const f=DB.funcionarios.find(x=>String(x.id)===String(fid));const c=f&&DB.catalogoFuncoes.find(x=>x.id==f.funcaoId);return c?c.nome:'-';};
+  const porFunc = {}; acc.forEach(a=>{ (porFunc[a.funcionarioId]=porFunc[a.funcionarioId]||[]).push(a); });
+  const dentro=[]; const entraram=new Set();
+  Object.keys(porFunc).forEach(fid=>{ entraram.add(fid); const evs=porFunc[fid]; if(evs[evs.length-1].tipo==='entrada') dentro.push(fid); });
+  const porEmp={}; entraram.forEach(fid=>{ const e=empFunc(fid); porEmp[e]=(porEmp[e]||0)+1; });
+  const obraNome = obraSel ? ((DB.obras.find(o=>String(o.id)===String(obraSel))||{}).nome||'') : 'Todas as obras';
+  const escH = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const diaBR = dia.split('-').reverse().join('/');
+  let html = '<html><head><meta charset="utf-8"><title>Efetivo '+escH(diaBR)+'</title><style>'+
+    'body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#222}'+
+    'h1{font-size:18px;color:#1a3d7c;margin:0}.sub{color:#666;font-size:12px;margin:2px 0 14px}'+
+    '.bar{border-bottom:3px solid #1a3d7c;padding-bottom:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end}'+
+    '.bm{font-size:20px;font-weight:800;color:#1a3d7c}.bm span{color:#F88800}'+
+    '.stats{display:flex;gap:24px;margin-bottom:16px;font-size:12px}.stats b{font-size:22px;display:block;color:#1a3d7c}'+
+    'table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px}'+
+    'th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#1a3d7c;color:#fff}'+
+    'h3{font-size:13px;color:#1a3d7c;margin:10px 0 4px}@media print{@page{margin:10mm}}'+
+    '</style></head><body>'+
+    '<div class="bar"><div><div class="bm">BRANDÃO<span>&amp;MARMO</span></div><div class="sub">Engenharia e Construções</div></div>'+
+    '<div style="text-align:right"><h1>EFETIVO DO DIA</h1><div class="sub">'+escH(obraNome)+' • '+escH(diaBR)+'</div></div></div>'+
+    '<div class="stats"><div><b>'+dentro.length+'</b>Dentro agora</div><div><b>'+entraram.size+'</b>Entraram no dia</div><div><b>'+acc.length+'</b>Movimentos</div></div>';
+  html += '<h3>Dentro agora ('+dentro.length+')</h3><table><thead><tr><th>Colaborador</th><th>Função</th><th>Empresa</th></tr></thead><tbody>'+
+    (dentro.map(fid=>'<tr><td>'+escH(nomeFunc(fid))+'</td><td>'+escH(funcaoFunc(fid))+'</td><td>'+escH(empFunc(fid))+'</td></tr>').join('')||'<tr><td colspan="3">Ninguém dentro</td></tr>')+'</tbody></table>';
+  html += '<h3>Por empresa (entraram)</h3><table><thead><tr><th>Empresa</th><th>Qtd</th></tr></thead><tbody>'+
+    (Object.keys(porEmp).map(e=>'<tr><td>'+escH(e)+'</td><td>'+porEmp[e]+'</td></tr>').join('')||'<tr><td colspan="2">-</td></tr>')+'</tbody></table>';
+  html += '<h3>Movimentos do dia</h3><table><thead><tr><th>Hora</th><th>Colaborador</th><th>Empresa</th><th>Tipo</th><th>Situação</th></tr></thead><tbody>'+
+    (acc.slice().reverse().map(a=>'<tr><td>'+new Date(a.momento).toLocaleTimeString('pt-BR')+'</td><td>'+escH(nomeFunc(a.funcionarioId))+'</td><td>'+escH(empFunc(a.funcionarioId))+'</td><td>'+(a.tipo==='entrada'?'Entrada':'Saída')+'</td><td>'+(a.status==='pendencia'?'Pendência':'OK')+'</td></tr>').join('')||'<tr><td colspan="5">Nenhum movimento</td></tr>')+'</tbody></table>';
+  html += '<div style="margin-top:20px;font-size:11px;color:#666">Emitido em '+new Date().toLocaleString('pt-BR')+' por '+escH(session.nome||'')+'</div></body></html>';
+  const w = window.open('','_blank','width=900,height=700');
+  if(!w){ toast('Permita pop-ups para imprimir','warn'); return; }
+  w.document.write(html); w.document.close();
+  setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 350);
 }
 
 /* ===== CRACHA / QR DO COLABORADOR ===== */
