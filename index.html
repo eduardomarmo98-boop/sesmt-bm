@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.17.10">
+<meta name="app-version" content="2026.06.17.13">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -286,6 +286,7 @@
     </div>
     <div class="user-info">
       <span><b id="topUser">—</b> <span class="badge-role sesmt" id="topRole">SESMT</span></span>
+      <button class="btn btn-secondary btn-sm" onclick="atualizarDados()" title="Atualizar dados">🔄</button>
       <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
     </div>
   </div>
@@ -639,6 +640,7 @@ function checarMfaDiario(){
 }
 setInterval(checarMfaDiario, 60000);
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') checarMfaDiario(); });
+async function atualizarDados(){ try{ toast('Atualizando...'); await loadFromSupabase(); go(currentPage); toast('Dados atualizados'); }catch(e){ toast('Erro ao atualizar','err'); } }
 
 /* ===== 2FA (TOTP) ===== */
 // Modal de cadastro do 2FA (primeira vez do usuário). Resolve true se enrolment OK.
@@ -889,7 +891,7 @@ function go(page){
 const QR_PREFIX = 'BM-';
 let _scanner = null;
 let _portaria = { obraId:null, modo:'entrada' };
-let _ultimaLeitura = 0;
+let _ultimaLeitura = 0; let _ultimoCodigo = "";
 
 // Situacao do colaborador na portaria - reusa statusDoc/docsExigidos ja existentes
 function situacaoColaborador(func){
@@ -955,8 +957,9 @@ function pararScanner(){
 
 function onScan(txt){
   const agora = Date.now();
-  if(agora - _ultimaLeitura < 2500) return; // evita ler o mesmo cracha varias vezes seguidas
-  _ultimaLeitura = agora;
+  if(agora - _ultimaLeitura < 4000) return;
+  if(txt===_ultimoCodigo && agora - _ultimaLeitura < 9000) return;
+  _ultimaLeitura = agora; _ultimoCodigo = txt;
   processarCodigo(txt);
 }
 function leituraManual(){
@@ -978,8 +981,9 @@ function processarCodigo(txt){
   const emp = DB.empresas.find(e=>e.id===func.empresaId);
   const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
   registrarAcesso(func, sit);
-  const cor = sit.liberado ? '#16a34a' : '#dc2626';
-  const titulo = sit.inativo ? 'COLABORADOR INATIVO' : (sit.liberado ? 'LIBERADO' : 'ATENCAO - PENDENCIA');
+  const _ent = _portaria.modo==='entrada';
+  const cor = sit.inativo ? '#dc2626' : (_ent ? (sit.liberado?'#16a34a':'#dc2626') : '#dc2626');
+  const titulo = sit.inativo ? 'COLABORADOR INATIVO' : (_ent ? (sit.liberado?'ACESSO LIBERADO':'ENTRADA - PENDENCIA') : 'SAIDA REGISTRADA');
   let det = '';
   if(sit.bloqueios.length){
     det = '<div style="margin-top:10px;text-align:left"><b>Pendencias:</b><ul style="margin:6px 0 0 18px;padding:0">'+
@@ -990,7 +994,7 @@ function processarCodigo(txt){
   }
   if(box) box.innerHTML =
     '<div style="border:3px solid '+cor+';border-radius:12px;padding:16px;text-align:center">'+
-      '<div style="font-size:28px;font-weight:800;color:'+cor+'">'+titulo+'</div>'+
+      '<div style="font-size:34px;font-weight:800;color:'+cor+'">'+titulo+'</div>'+
       '<div style="font-size:20px;font-weight:700;margin-top:6px">'+escapeHtml(func.nome)+'</div>'+
       '<div style="color:var(--muted);font-size:13px">'+escapeHtml((funcao&&funcao.nome)||'-')+' - '+escapeHtml((emp&&emp.razao)||'-')+'</div>'+
       '<div style="margin-top:6px;font-size:13px">Registrado: <b>'+(_portaria.modo==='entrada'?'ENTRADA':'SAIDA')+'</b> as '+new Date().toLocaleTimeString('pt-BR')+'</div>'+
@@ -2633,8 +2637,8 @@ function notificarEmpresa(empresaId){
   obraIds.forEach(oid=>destinatariosObra(oid).cc.forEach(c=>allCc.add(c)));
   showModal(`Notificar: ${emp.razao}`, previewEmail(emp, grupos[empresaId]), async ()=>{
     const html = previewEmail(emp, grupos[empresaId]);
-    const ok = await enviarWebhook({to:emp.email, cc:[...allCc], subject:`[SESMT] Pendências - ${emp.razao}`, html, pendencias:grupos[empresaId], empresa:emp.razao});
-    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:[...allCc].join(';'),assunto:`[SESMT] Pendências - ${emp.razao}`,itens:grupos[empresaId].length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
+    const ok = await enviarWebhook({to:emp.email, cc:[...allCc], subject:`SESMT Brandão & Marmo — Documentos pendentes: ${emp.razao}`, html, pendencias:grupos[empresaId], empresa:emp.razao});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:[...allCc].join(';'),assunto:`SESMT Brandão & Marmo — Documentos pendentes: ${emp.razao}`,itens:grupos[empresaId].length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
     save(); toast(ok?'E-mail enviado via webhook':'Webhook não configurado - apenas registrado'); return true;
   }, [], false, 'lg');
 }
@@ -2651,8 +2655,8 @@ function notificarFuncionario(funcId){
   const dest = destinatariosObra(f.obraId);
   showModal(`Notificar pendências de ${f.nome}`, previewEmail(emp, pend, f.nome, [f.obraId]), async ()=>{
     const html = previewEmail(emp, pend, f.nome, [f.obraId]);
-    const ok = await enviarWebhook({to:emp.email, cc:dest.cc, subject:`[SESMT] Pendências - ${f.nome}`, html, pendencias:pend, colaborador:f.nome, empresa:emp.razao});
-    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:dest.cc.join(';'),assunto:`[SESMT] Pendências - ${f.nome}`,itens:pend.length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
+    const ok = await enviarWebhook({to:emp.email, cc:dest.cc, subject:`SESMT Brandão & Marmo — Documentos pendentes: ${f.nome}`, html, pendencias:pend, colaborador:f.nome, empresa:emp.razao});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,cc:dest.cc.join(';'),assunto:`SESMT Brandão & Marmo — Documentos pendentes: ${f.nome}`,itens:pend.length,enviadoPor:session.nome,via:ok?'webhook':'simulado'});
     save(); toast(ok?'E-mail enviado via webhook':'Sem webhook - registrado'); return true;
   }, [], false, 'lg');
 }
@@ -2667,7 +2671,7 @@ function previewEmail(emp, pendencias, colaboradorNome, obraIds){
       <b>De:</b> ${DB.config.smtp.remetente}<br>
       <b>Para:</b> ${emp.email}<br>
       <b>Cc:</b> ${[...allCc].join('; ')||'(nenhum)'}<br>
-      <b>Assunto:</b> [SESMT B&M] Pendências - ${colaboradorNome||emp.razao}
+      <b>Assunto:</b> SESMT Brandão & Marmo — Documentos pendentes: ${colaboradorNome||emp.razao}
     </div>
     <div style="margin-top:14px">
       <p>Prezados,</p>
@@ -2676,7 +2680,7 @@ function previewEmail(emp, pendencias, colaboradorNome, obraIds){
         <thead><tr><th>Categoria</th><th>Item</th><th>Documento</th><th>Situação</th></tr></thead>
         <tbody>${pendencias.map(p=>`<tr><td>${p.cat}</td><td>${p.ref}</td><td>${p.doc}</td><td><span class="status ${p.status.includes('Vence')?'warn':p.status==='VENCIDO'||p.status==='RECUSADO'?'crit':'pendente'}">${p.status}</span></td></tr>`).join('')}</tbody>
       </table>
-      <p style="margin-top:12px">Atenciosamente,<br>SESMT - Brandão & Marmo Engenharia</p>
+      <p style="margin-top:14px">Atenciosamente,</p><img src="https://eduardomarmo98-boop.github.io/sesmt-bm/assinatura-email.png" alt="Brandão & Marmo - SESMT" style="max-width:520px;width:100%;margin-top:6px;border:0;display:block">
     </div>
   `;
 }
@@ -2688,7 +2692,7 @@ function enviarNotificacoesEmLote(){
   if(!confirm(`Enviar ${ids.length} notificação(ões)? ${DB.config.smtp.host?'':'(SMTP não configurado — apenas histórico)'}`)) return;
   ids.forEach(eid=>{
     const emp = DB.empresas.find(e=>e.id==eid);
-    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,assunto:`[SESMT B&M] Pendências - ${emp.razao}`,itens:grupos[eid].length,enviadoPor:session.nome});
+    DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:emp.email,assunto:`SESMT Brandão & Marmo — Documentos pendentes: ${emp.razao}`,itens:grupos[eid].length,enviadoPor:session.nome});
   });
   save(); toast(`${ids.length} notificação(ões) ${DB.config.smtp.host?'enviadas':'simuladas'}`);
   if(currentPage==='notificacoes') go('notificacoes');
