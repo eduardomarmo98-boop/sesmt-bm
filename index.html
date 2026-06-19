@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.11">
+<meta name="app-version" content="2026.06.19.12">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1017,37 +1017,52 @@ function processarCodigo(txt){
   let token = String(txt||'').trim();
   if(token.indexOf(QR_PREFIX)===0) token = token.slice(QR_PREFIX.length);
   const ov = document.getElementById('scanOverlay');
-  const btnNext = '<button class="btn" style="margin-top:18px;background:#fff;color:#111;font-weight:700;padding:12px 22px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
-  function mostrar(bg, titulo, sub, det){
+  const btnNext = '<button class="btn" style="margin-top:14px;background:#fff;color:#111;font-weight:700;padding:12px 22px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
+  function mostrar(bg, titulo, sub, det, aceiteId){
     if(!ov){ return; }
     ov.style.background = bg; ov.style.display='flex';
+    const extra = aceiteId ? '<button class="btn" style="margin-top:16px;background:#fff;color:#b91c1c;font-weight:800;padding:12px 18px;font-size:15px;border:0;border-radius:8px" onclick="registrarEntradaManual('+aceiteId+')">✓ Registrar entrada mesmo assim</button>' : '';
     ov.innerHTML = '<div style="font-size:30px;font-weight:800;letter-spacing:.5px">'+titulo+'</div>'+
       (sub?'<div style="font-size:20px;font-weight:700;margin-top:10px;padding:0 8px">'+sub+'</div>':'')+
-      (det?'<div style="font-size:15px;font-weight:600;margin-top:10px">'+det+'</div>':'')+
-      btnNext;
+      (det?'<div style="font-size:15px;font-weight:600;margin-top:8px">'+det+'</div>':'')+
+      extra + btnNext;
   }
   const func = DB.funcionarios.find(f=>f.qrToken===token);
-  if(!func){
-    mostrar('#b45309', 'QR INVALIDO', '', 'Cracha nao reconhecido neste sistema.');
-    try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){}
-    return;
-  }
+  if(!func){ mostrar('#b45309','QR INVALIDO','','Cracha nao reconhecido neste sistema.'); try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){} return; }
   const sit = situacaoColaborador(func);
   const emp = DB.empresas.find(e=>e.id===func.empresaId);
   const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
   const evs = (DB.acessos||[]).filter(a=>String(a.funcionarioId)===String(func.id) && String(a.momento||'').slice(0,10)===hoje()).sort(function(a,b){ return a.momento<b.momento?-1:1; });
   const ultimo = evs[evs.length-1];
   const acao = (ultimo && ultimo.tipo==='entrada') ? 'saida' : 'entrada';
-  registrarAcesso(func, sit, acao);
-  const ent = acao==='entrada';
-  let bg, titulo, det='';
-  if(sit.inativo){ bg='#dc2626'; titulo='INATIVO'; }
-  else if(!ent){ bg='#2563eb'; titulo='SAIDA'; }
-  else if(sit.liberado){ bg='#16a34a'; titulo='✓ LIBERADO'; }
-  else { bg='#dc2626'; titulo='PENDENCIA'; det = sit.bloqueios.length+' documento(s) pendente(s)'; }
   const sub = escapeHtml(func.nome)+'<br><span style="font-size:13px;font-weight:400;opacity:.95">'+escapeHtml((funcao&&funcao.nome)||'-')+' · '+escapeHtml((emp&&emp.razao)||'-')+' · '+new Date().toLocaleTimeString('pt-BR')+'</span>';
-  mostrar(bg, titulo, sub, det);
+  if(acao==='saida'){
+    registrarAcesso(func, sit, 'saida');
+    mostrar('#2563eb','← SAIDA REGISTRADA', sub, '');
+  } else if(sit.inativo){
+    mostrar('#dc2626','COLABORADOR INATIVO', sub, 'Cadastro inativo — entrada NAO registrada.', func.id);
+  } else if(sit.liberado){
+    registrarAcesso(func, sit, 'entrada');
+    mostrar('#16a34a','✓ ENTRADA LIBERADA', sub, '');
+  } else {
+    mostrar('#dc2626','PENDENCIA', sub, sit.bloqueios.length+' documento(s) pendente(s) — entrada NAO registrada', func.id);
+  }
   try{ if(navigator.vibrate) navigator.vibrate(sit.liberado?80:[120,60,120]); }catch(e){}
+}
+function registrarEntradaManual(id){
+  const func = DB.funcionarios.find(f=>f.id===id);
+  if(!func) return;
+  const sit = situacaoColaborador(func);
+  registrarAcesso(func, sit, 'entrada');
+  const ov = document.getElementById('scanOverlay');
+  if(ov){
+    ov.style.background = '#15803d';
+    ov.innerHTML = '<div style="font-size:28px;font-weight:800">✓ ENTRADA REGISTRADA</div>'+
+      '<div style="font-size:14px;margin-top:8px">autorizada na portaria (com pendência)</div>'+
+      '<div style="font-size:18px;font-weight:700;margin-top:8px">'+escapeHtml(func.nome)+'</div>'+
+      '<button class="btn" style="margin-top:16px;background:#fff;color:#111;font-weight:700;padding:12px 22px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
+  }
+  try{ if(navigator.vibrate) navigator.vibrate(60); }catch(e){}
 }
 
 async function registrarAcesso(func, sit, acao){
