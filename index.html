@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.1">
+<meta name="app-version" content="2026.06.22.2">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1635,13 +1635,17 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
   try{
     const base64 = await fileToBase64(file);
     const mimeType = file.type || 'application/pdf';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${DB.config.geminiModel||'gemini-2.0-flash'}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const modelo = DB.config.geminiModel||'gemini-2.0-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const genCfg = {temperature:0.15, maxOutputTokens:8192, responseMimeType:'application/json'};
+    // Modelos 2.5+/3 usam "thinking", que consome o orcamento de tokens e trunca/zera o JSON -> desliga
+    if(/2\.5|gemini-3/.test(modelo)) genCfg.thinkingConfig = {thinkingBudget:0};
     const reqBody = JSON.stringify({
       contents:[{parts:[
         {inline_data:{mime_type:mimeType, data:base64}},
         {text:prompt}
       ]}],
-      generationConfig:{temperature:0.15, maxOutputTokens:3000, responseMimeType:'application/json'}
+      generationConfig: genCfg
     });
     let res;
     for(let tentativa=1; tentativa<=3; tentativa++){
@@ -1658,7 +1662,13 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
       return {iaStatus:'pendente', iaNota: msg};
     }
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const cand = data.candidates?.[0];
+    const text = (cand?.content?.parts||[]).map(p=>p&&p.text?p.text:'').join('').trim();
+    if(!text){
+      return {iaStatus:'pendente', iaNota: (cand?.finishReason==='MAX_TOKENS')
+        ? 'A IA atingiu o limite de tamanho e não concluiu a análise. Reenvie; se persistir, troque o modelo para gemini-2.0-flash em Configurações.'
+        : 'A IA não retornou conteúdo desta vez. Reenvie ou avalie manualmente.'};
+    }
     const cleaned = text.replace(/```json|```/g,'').trim();
     let parsed;
     try{ parsed = JSON.parse(cleaned); }
