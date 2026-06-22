@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.19.14">
+<meta name="app-version" content="2026.06.22.1">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -591,7 +591,10 @@ async function doLogin(){
   // ========== FLUXO 2FA TOTP ==========
   if(TIPOS_MFA_OBRIGATORIO.includes(perfilTmp.tipo)){
     const {data:fatores} = await sb.auth.mfa.listFactors();
-    const totpVerificado = (fatores?.totp||[]).find(f=>f.status==='verified');
+    const verificados = (fatores?.totp||[]).filter(f=>f.status==='verified');
+    // remove apenas fatores incompletos (nao verificados) - seguro, evita o 2FA em duplicidade
+    (fatores?.totp||[]).filter(f=>f.status!=='verified').forEach(f=>{ sb.auth.mfa.unenroll({factorId:f.id}).catch(()=>{}); });
+    const totpVerificado = verificados[0];
     const {data:aalData} = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
     if(!totpVerificado){
       // Primeira vez: precisa configurar 2FA
@@ -599,7 +602,7 @@ async function doLogin(){
       if(!ok){ await sb.auth.signOut(); return; }
     } else if(aalData?.currentLevel !== 'aal2'){
       // Já configurou antes: pede o código
-      const ok = await mfaChallengeFlow(totpVerificado.id);
+      const ok = await mfaChallengeFlow(verificados.map(f=>f.id));
       if(!ok){ await sb.auth.signOut(); return; }
     }
   }
@@ -786,7 +789,8 @@ function mfaEnrolmentFlow(perfil){
 }
 
 // Modal pra digitar código (usuários que JÁ configuraram). Resolve true se OK.
-function mfaChallengeFlow(factorId){
+function mfaChallengeFlow(factorIds){
+  const ids = Array.isArray(factorIds) ? factorIds : [factorIds];
   return new Promise((resolve)=>{
     showModal('🔐 Verificação em 2 Etapas', `
       <div style="text-align:center;margin-bottom:14px;color:var(--muted);font-size:13px">
@@ -801,8 +805,9 @@ function mfaChallengeFlow(factorId){
     `, async ()=>{
       const code = (val('f_totp')||'').replace(/\s/g,'');
       if(!/^\d{6}$/.test(code)){ toast('Digite os 6 dígitos','err'); return false; }
-      const {error} = await sb.auth.mfa.challengeAndVerify({factorId, code});
-      if(error){ toast('Código inválido. Tente o próximo.','err'); return false; }
+      let _ok=false;
+      for(const _fid of ids){ const r = await sb.auth.mfa.challengeAndVerify({factorId:_fid, code}); if(!r.error){ _ok=true; break; } }
+      if(!_ok){ toast('Código inválido.','err'); return false; }
       resolve(true);
       return true;
     });
@@ -1033,9 +1038,11 @@ function leituraManual(){
   if(c) processarCodigo(String(c).trim());
 }
 
-function processarCodigo(txt){
-  let token = String(txt||'').trim();
+async function processarCodigo(txt){
+  let raw = String(txt||'').trim();
+  let token = raw;
   if(token.indexOf(QR_PREFIX)===0) token = token.slice(QR_PREFIX.length);
+  token = token.trim();
   const ov = document.getElementById('scanOverlay');
   const btnNext = '<button class="btn" style="margin-top:14px;background:#fff;color:#111;font-weight:700;padding:12px 22px;font-size:16px;border:0;border-radius:8px" onclick="retomarScanner()">📷 Ler proximo</button>';
   function mostrar(bg, titulo, sub, det, aceiteId){
@@ -1054,8 +1061,16 @@ function processarCodigo(txt){
       (det?'<div style="font-size:15px;font-weight:600;margin-top:8px">'+det+'</div>':'')+
       extra + fim;
   }
-  const func = DB.funcionarios.find(f=>f.qrToken===token);
-  if(!func){ mostrar('#b45309','QR INVALIDO','','Cracha nao reconhecido neste sistema.'); try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){} return; }
+  const _norm = s => String(s||'').trim().toLowerCase();
+  const achar = () => DB.funcionarios.find(f=>_norm(f.qrToken)===_norm(token)) || DB.funcionarios.find(f=>_norm(f.qrToken)===_norm(raw));
+  let func = achar();
+  if(!func){
+    // dados podem estar desatualizados neste aparelho — recarrega e tenta de novo
+    if(ov){ ov.style.background='#334155'; ov.style.display='flex'; ov.innerHTML='<div style="font-size:22px;font-weight:700">Atualizando dados…</div>'; }
+    try{ await recarregarFuncionarios(); }catch(e){}
+    func = achar();
+  }
+  if(!func){ mostrar('#b45309','QR INVALIDO','Codigo: '+escapeHtml(raw),'Cracha nao reconhecido. Confira se o colaborador esta cadastrado e ativo, ou gere o cracha novamente.'); try{ if(navigator.vibrate) navigator.vibrate(250); }catch(e){} return; }
   const sit = situacaoColaborador(func);
   const emp = DB.empresas.find(e=>e.id===func.empresaId);
   const funcao = DB.catalogoFuncoes.find(c=>c.id==func.funcaoId);
@@ -1075,6 +1090,12 @@ function processarCodigo(txt){
     mostrar('#dc2626','PENDENCIA', sub, sit.bloqueios.length+' documento(s) pendente(s) — entrada NAO registrada', func.id);
   }
   try{ if(navigator.vibrate) navigator.vibrate(sit.liberado?80:[120,60,120]); }catch(e){}
+}
+async function recarregarFuncionarios(){
+  try{
+    const {data} = await sb.from('funcionarios').select('*');
+    if(data) DB.funcionarios = data.map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
+  }catch(e){}
 }
 function registrarEntradaManual(id){
   const func = DB.funcionarios.find(f=>f.id===id);
@@ -1517,6 +1538,14 @@ function simularIA(){
   if(r<0.9) return {iaStatus:'duvida', iaNota:'(Simulado) Revisão recomendada.'};
   return {iaStatus:'recusado', iaNota:'(Simulado) Ilegível.'};
 }
+function _normData(s){
+  if(!s) return '';
+  s=String(s).trim();
+  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+  if(m){ let d=m[1].padStart(2,'0'), mo=m[2].padStart(2,'0'), y=m[3]; if(y.length===2) y='20'+y; return y+'-'+mo+'-'+d; }
+  return '';
+}
 
 function fileToBase64(file){
   return new Promise((res,rej)=>{
@@ -1599,26 +1628,34 @@ OUTPUT: APENAS UM JSON PURO, SEM markdown, SEM backticks. Formato EXATO:
   ],
   "divergencias": ["lista de problemas reais encontrados, ou vazia"],
   "recomendacao": "se status != aprovado, o que fazer para corrigir; se aprovado, vazio"
-}`;
+}
+
+IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (lista) e "recomendacao" sao OBRIGATORIOS e devem explicar de forma CLARA, em portugues simples, o MOTIVO da recusa/duvida e exatamente o que a empresa deve fazer para corrigir. Tambem preencha "emissao" e "validade" sempre que conseguir ler no documento.`;
 
   try{
     const base64 = await fileToBase64(file);
     const mimeType = file.type || 'application/pdf';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${DB.config.geminiModel||'gemini-2.0-flash'}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        contents:[{parts:[
-          {inline_data:{mime_type:mimeType, data:base64}},
-          {text:prompt}
-        ]}],
-        generationConfig:{temperature:0.15, maxOutputTokens:3000, responseMimeType:'application/json'}
-      })
+    const reqBody = JSON.stringify({
+      contents:[{parts:[
+        {inline_data:{mime_type:mimeType, data:base64}},
+        {text:prompt}
+      ]}],
+      generationConfig:{temperature:0.15, maxOutputTokens:3000, responseMimeType:'application/json'}
     });
+    let res;
+    for(let tentativa=1; tentativa<=3; tentativa++){
+      res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody});
+      if(res.ok) break;
+      // 429/500/503 = sobrecarga temporaria do servidor de IA -> espera e tenta de novo
+      if([429,500,503].includes(res.status) && tentativa<3){ await new Promise(r=>setTimeout(r, tentativa*1800)); continue; }
+      break;
+    }
     if(!res.ok){
-      const err = await res.text();
-      return {iaStatus:'pendente', iaNota:`Erro Gemini ${res.status}: ${err.slice(0,200)}`};
+      const msg = [429,500,503].includes(res.status)
+        ? 'Análise automática indisponível no momento (servidor de IA ocupado). O documento foi salvo; clique em "Atualizar" para tentar de novo, ou avalie manualmente.'
+        : 'Não foi possível analisar automaticamente agora. Tente reenviar ou avalie manualmente.';
+      return {iaStatus:'pendente', iaNota: msg};
     }
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -1631,7 +1668,8 @@ OUTPUT: APENAS UM JSON PURO, SEM markdown, SEM backticks. Formato EXATO:
       else return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON. Texto: '+cleaned.slice(0,300)};
     }
     const status = ['aprovado','duvida','recusado'].includes(parsed.status) ? parsed.status : 'duvida';
-    return {iaStatus:status, iaNota: formatarNotaIA(parsed)};
+    const L = parsed.leitura||{};
+    return {iaStatus:status, iaNota: formatarNotaIA(parsed), emissao:_normData(L.emissao), validade:_normData(L.validade)};
   } catch(e){
     return {iaStatus:'pendente', iaNota:'Falha ao chamar Gemini: '+e.message};
   }
@@ -2318,7 +2356,8 @@ function renderDocRow(tipo, ref, de, obraId){
     </div>
     <span class="status ${s.cls}">${s.label}</span>
     <div class="small-actions">
-      ${doc && doc.arquivoData ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
+      ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Abrir / visualizar documento" onclick="abrirDoc(${doc.id})">👁️ Abrir</button>`:''}
+      ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
       ${doc && pode('aprovar_doc') && doc.sesmtStatus==='pendente' ? `
         <button class="btn btn-success btn-sm" title="Aprovar" onclick="aprovarDoc(${doc.id})">✓</button>
         <button class="btn btn-danger btn-sm" title="Recusar" onclick="recusarDoc(${doc.id})">✗</button>` : ''}
@@ -2340,11 +2379,13 @@ function dropOnRow(e,tipo,refId,docId,docNome,validadeDias,obraId){
       const dt = new DataTransfer(); dt.items.add(f);
       arq.files = dt.files;
       atualizarDropLabel(arq);
+      analisarUploadIA();
     }
   }, 120);
 }
 
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let _iaUpload=null, _upCtx=null;
 function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
   obraId = obraId||null;
   const existing = getDoc(tipo, refId, docId, obraId);
@@ -2369,6 +2410,8 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     contexto = `• MÁQUINA: ${m?.descricao}\n• PATRIMÔNIO/SÉRIE: ${m?.patrimonio||'-'}\n• EMPRESA: ${emp?.razao||''}\n• OBRA: ${obra?.nome||''}`;
   }
   const temGemini = !!DB.config.geminiApiKey;
+  _iaUpload = null;
+  _upCtx = {docExigido, contexto, temGemini, validadeDias};
   showModal(`Enviar: ${docNome}`, `
     <div class="form-group">
       <label>Arquivo PDF</label>
@@ -2376,7 +2419,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         <div style="font-size:30px;margin-bottom:4px">📎</div>
         <div id="dropLabel" style="color:var(--muted);font-size:13px"><b>Clique</b> ou <b>arraste o PDF</b> aqui</div>
       </div>
-      <input id="f_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg" style="display:none" onchange="atualizarDropLabel(this)">
+      <input id="f_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg" style="display:none" onchange="atualizarDropLabel(this); analisarUploadIA()">
     </div>
     <div class="alert ${temGemini?'success':'info'}">
       ${temGemini ? '🤖 <b>Análise por IA ativa</b> — Gemini vai ler o PDF e validar automaticamente.' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
@@ -2386,9 +2429,10 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
       ${validadeDias?`<div class="form-group"><label>Validade</label><input id="f_val" type="date" value="${validade}"></div>`:''}
     </div>
     <div id="iaLoading" style="display:none;text-align:center;padding:20px;background:#dbeafe;border-radius:8px;margin-top:12px">
-      <div style="font-size:18px;margin-bottom:6px">🤖 Analisando documento com Gemini...</div>
-      <div style="font-size:12px;color:var(--muted)">Pode levar alguns segundos</div>
+      <div style="font-size:18px;margin-bottom:6px">🤖 Analisando documento com IA...</div>
+      <div style="font-size:12px;color:var(--muted)">Lendo o documento e as datas — pode levar alguns segundos</div>
     </div>
+    <div id="iaResultado"></div>
   `, async ()=>{
     const arq = document.getElementById('f_arq').files[0];
     const nomeArq = arq?arq.name:(existing?.arquivo||'documento.pdf');
@@ -2407,10 +2451,10 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         sb.storage.from('documentos').remove([existing.arquivoPath]).catch(()=>{});
       }
     }
-    if(DB.config.iaHabilitada && arq){
-      document.getElementById('iaLoading').style.display='block';
-      if(temGemini) ia = await analisarComGemini(arq, docExigido, contexto);
-      else ia = simularIA();
+    if(arq && DB.config.iaHabilitada){
+      // a IA normalmente ja rodou ao selecionar o arquivo (analisarUploadIA); se nao, roda agora
+      if(_iaUpload) ia = _iaUpload;
+      else { document.getElementById('iaLoading').style.display='block'; ia = temGemini ? await analisarComGemini(arq, docExigido, contexto) : simularIA(); }
     } else if(existing && !arq) {
       ia = {iaStatus:existing.iaStatus, iaNota:existing.iaNota};
     }
@@ -2423,6 +2467,30 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     go(currentPage);
     return true;
   });
+}
+async function analisarUploadIA(){
+  _iaUpload = null;
+  const arqEl = document.getElementById('f_arq');
+  const arq = arqEl && arqEl.files ? arqEl.files[0] : null;
+  if(!arq || !_upCtx || !DB.config.iaHabilitada) return;
+  const load=document.getElementById('iaLoading'), resBox=document.getElementById('iaResultado');
+  if(load) load.style.display='block'; if(resBox) resBox.innerHTML='';
+  let ia;
+  try{ ia = _upCtx.temGemini ? await analisarComGemini(arq, _upCtx.docExigido, _upCtx.contexto) : simularIA(); }
+  catch(e){ ia = {iaStatus:'pendente', iaNota:'Falha ao analisar: '+e.message}; }
+  if(load) load.style.display='none';
+  _iaUpload = ia;
+  // a IA preenche emissao/validade; se nao achou, alerta p/ preencher manual
+  const faltou=[];
+  const eEl=document.getElementById('f_emit'), vEl=document.getElementById('f_val');
+  if(eEl){ if(ia.emissao) eEl.value=ia.emissao; else if(_upCtx.temGemini) faltou.push('Data de Emissão'); }
+  if(vEl){ if(ia.validade) vEl.value=ia.validade; else if(_upCtx.temGemini) faltou.push('Validade'); }
+  if(resBox){
+    const bg = ia.iaStatus==='recusado'?'#fee2e2':ia.iaStatus==='duvida'?'#fef3c7':ia.iaStatus==='aprovado'?'#dcfce7':'#dbeafe';
+    resBox.innerHTML =
+      '<div style="background:'+bg+';border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word"><b>🤖 IA ('+ia.iaStatus+'):</b>\n'+escapeHtml(ia.iaNota||'')+'</div>'+
+      (faltou.length?'<div class="alert warn" style="margin-top:8px">⚠️ A IA não encontrou: <b>'+faltou.join(' e ')+'</b>. Preencha manualmente abaixo antes de salvar.</div>':'');
+  }
 }
 async function excluirDoc(docId){
   if(!confirm('Excluir este documento? Será possível reenviar depois.')) return;
@@ -2454,8 +2522,7 @@ function recusarDoc(docId){
     if(!motivo){ toast('Descreva o motivo','err'); return false; }
     d.sesmtStatus = 'recusado'; d.sesmtMotivo = motivo; d.sesmtPor = session.id;
     save(); toast('Documento recusado','warn'); closeModal(); go(currentPage);
-    // dispara WhatsApp para o responsável da empresa
-    notificarWhatsApp('doc_recusado', {documentoId: d.id});
+    // (sem disparo individual por WhatsApp/e-mail — pendencias vao no resumo diario 1x/dia)
     return true;
   });
 }
@@ -3118,6 +3185,13 @@ async function testarGemini(){
 }
 
 /* ===== DOWNLOAD INDIVIDUAL E EM MASSA ===== */
+async function abrirDoc(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(!d || !d.arquivoPath){ toast('Este documento não tem arquivo para abrir','warn'); return; }
+  const {data, error} = await sb.storage.from('documentos').createSignedUrl(d.arquivoPath, 3600);
+  if(error || !data){ toast('Erro ao abrir: '+((error&&error.message)||'tente novamente'),'err'); return; }
+  window.open(data.signedUrl, '_blank');
+}
 async function baixarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
   if(!d||!d.arquivoPath){ toast('Arquivo não disponível','err'); return; }
