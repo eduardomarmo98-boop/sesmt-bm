@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.2">
+<meta name="app-version" content="2026.06.22.3">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -384,7 +384,7 @@ async function loadFromSupabase(){
       sb.from('acessos').select('*').order('momento',{ascending:false}).limit(2000)
     ]);
     DB.usuarios = (us.data||[]).map(u=>({id:u.id,email:u.email,nome:u.nome,tipo:u.tipo,empresaId:u.empresa_id,obraIds:u.obra_ids||[],naoApagar:u.nao_apagar}));
-    DB.catalogoDocs = (cd.data||[]).map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validadeDias:d.validade_dias,descricao:d.descricao,checklistIA:d.checklist_ia}));
+    DB.catalogoDocs = (cd.data||[]).map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validadeDias:d.validade_dias,descricao:d.descricao,checklistIA:d.checklist_ia,exigeData:d.exige_data!==false}));
     DB.catalogoFuncoes = (cf.data||[]).map(f=>({id:f.id,nome:f.nome,docsIds:f.docs_ids||[]}));
     const emObras = {}; (eo.data||[]).forEach(r=>{(emObras[r.empresa_id]=emObras[r.empresa_id]||[]).push(r.obra_id);});
     DB.empresas = (em.data||[]).map(e=>({id:e.id,cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel,email:e.email,telefone:e.telefone,obraIds:emObras[e.id]||[]}));
@@ -409,7 +409,7 @@ async function syncToSupabase(){
   const c = DB.config;
   await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_model:c.geminiModel||'gemini-2.0-flash', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'});
   if(DB.catalogoDocs.length){
-    await sb.from('catalogo_documentos').upsert(DB.catalogoDocs.map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||''})));
+    await sb.from('catalogo_documentos').upsert(DB.catalogoDocs.map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||'',exige_data:d.exigeData!==false})));
   }
   for(const f of DB.catalogoFuncoes){
     if(typeof f.id==='number' && f.id<1e9){
@@ -982,6 +982,7 @@ function situacaoColaborador(func){
 }
 
 function renderPortaria(){
+  loadFromSupabase().catch(()=>{}); // dados frescos p/ leitura do QR (evita "QR invalido" por cache no aparelho)
   const obras = escopoObras().filter(o=>o.ativa);
   if(_portaria.obraId==null) _portaria.obraId = (obras[0] && obras[0].id) || null;
   document.getElementById('main').innerHTML =
@@ -1648,11 +1649,11 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
       generationConfig: genCfg
     });
     let res;
-    for(let tentativa=1; tentativa<=3; tentativa++){
+    for(let tentativa=1; tentativa<=4; tentativa++){
       res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody});
       if(res.ok) break;
       // 429/500/503 = sobrecarga temporaria do servidor de IA -> espera e tenta de novo
-      if([429,500,503].includes(res.status) && tentativa<3){ await new Promise(r=>setTimeout(r, tentativa*1800)); continue; }
+      if([429,500,503].includes(res.status) && tentativa<4){ await new Promise(r=>setTimeout(r, tentativa*1800)); continue; }
       break;
     }
     if(!res.ok){
@@ -2345,7 +2346,8 @@ function renderDocsList(tipo, ref){
   }
   const exigidos = tipo==='funcionario'?docsExigidosFuncionario(ref) : docsExigidosMaquina(ref);
   if(exigidos.length===0) return '<div class="empty">Nenhum documento exigido. Verifique configuração da obra.</div>';
-  return exigidos.map(de=>renderDocRow(tipo, ref, de, null)).join('');
+  const btnMassa = pode('enviar_doc') ? `<div style="margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="uploadEmMassa('${tipo}',${ref.id})">📎 Enviar vários arquivos de uma vez</button> <span style="font-size:11px;color:var(--muted)">o sistema identifica cada doc pelo nome do arquivo</span></div>` : '';
+  return btnMassa + exigidos.map(de=>renderDocRow(tipo, ref, de, null)).join('');
 }
 
 function renderDocRow(tipo, ref, de, obraId){
@@ -2356,7 +2358,7 @@ function renderDocRow(tipo, ref, de, obraId){
     <div>
       <div class="doc-name">${de.nome}</div>
       <div class="doc-meta">
-        ${doc?`📎 ${doc.arquivo} • Emitido: ${doc.emitidoEm}${doc.validade?` • Validade: ${doc.validade}`:''}`:'<span style="color:var(--muted)">⤓ Arraste o PDF aqui ou clique em Enviar →</span>'}
+        ${doc?`📎 ${doc.arquivo}${(de&&de.exigeData===false)?'':` • Emitido: ${doc.emitidoEm||'-'}`}${doc.validade?` • Validade: ${doc.validade}`:''}`:'<span style="color:var(--muted)">⤓ Arraste o PDF aqui ou clique em Enviar →</span>'}
       </div>
       ${doc && (doc.iaNota || doc.sesmtMotivo) ? `
         <div style="margin-top:8px;padding:10px 12px;background:#f9fafb;border-left:3px solid ${doc.sesmtStatus==='recusado'?'var(--crit)':doc.iaStatus==='recusado'?'var(--crit)':doc.iaStatus==='duvida'?'var(--warn)':'var(--info)'};border-radius:4px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">
@@ -2395,7 +2397,7 @@ function dropOnRow(e,tipo,refId,docId,docNome,validadeDias,obraId){
 }
 
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-let _iaUpload=null, _upCtx=null;
+let _iaUpload=null, _upCtx=null, _massaCtx=null;
 function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
   obraId = obraId||null;
   const existing = getDoc(tipo, refId, docId, obraId);
@@ -2434,10 +2436,10 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     <div class="alert ${temGemini?'success':'info'}">
       ${temGemini ? '🤖 <b>Análise por IA ativa</b> — Gemini vai ler o PDF e validar automaticamente.' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
     </div>
-    <div class="grid-2">
+    ${(docExigido&&docExigido.exigeData===false)?'':`<div class="grid-2">
       <div class="form-group"><label>Data de Emissão</label><input id="f_emit" type="date" value="${emitido}"></div>
       ${validadeDias?`<div class="form-group"><label>Validade</label><input id="f_val" type="date" value="${validade}"></div>`:''}
-    </div>
+    </div>`}
     <div id="iaLoading" style="display:none;text-align:center;padding:20px;background:#dbeafe;border-radius:8px;margin-top:12px">
       <div style="font-size:18px;margin-bottom:6px">🤖 Analisando documento com IA...</div>
       <div style="font-size:12px;color:var(--muted)">Lendo o documento e as datas — pode levar alguns segundos</div>
@@ -2468,7 +2470,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     } else if(existing && !arq) {
       ia = {iaStatus:existing.iaStatus, iaNota:existing.iaNota};
     }
-    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm:val('f_emit'),validade:validadeDias?val('f_val'):null,
+    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm:(docExigido&&docExigido.exigeData===false)?'':val('f_emit'),validade:validadeDias?val('f_val'):null,
       iaStatus:ia.iaStatus, iaNota:ia.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
     save();
@@ -2501,6 +2503,83 @@ async function analisarUploadIA(){
       '<div style="background:'+bg+';border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word"><b>🤖 IA ('+ia.iaStatus+'):</b>\n'+escapeHtml(ia.iaNota||'')+'</div>'+
       (faltou.length?'<div class="alert warn" style="margin-top:8px">⚠️ A IA não encontrou: <b>'+faltou.join(' e ')+'</b>. Preencha manualmente abaixo antes de salvar.</div>':'');
   }
+}
+function _normTxt(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+function _matchDoc(fileName, exigidos){
+  const fn = _normTxt(fileName); let best=null, bestScore=0;
+  exigidos.forEach(de=>{
+    let score=0; const idN=_normTxt(de.id), nomeN=_normTxt(de.nome);
+    if(idN && fn.includes(idN)) score += idN.length;
+    if(nomeN && fn.includes(nomeN)) score += nomeN.length*2;
+    nomeN.split(' ').forEach(t=>{ if(t.length>=3 && fn.includes(t)) score += t.length; });
+    if(score>bestScore){ bestScore=score; best=de; }
+  });
+  return bestScore>=3 ? best : null;
+}
+function contextoRef(tipo, refId){
+  if(tipo==='funcionario'){
+    const f=DB.funcionarios.find(x=>x.id===refId); const funcao=DB.catalogoFuncoes.find(c=>c.id===f?.funcaoId);
+    const obra=DB.obras.find(o=>o.id===f?.obraId); const emp=DB.empresas.find(e=>e.id===f?.empresaId);
+    return `• COLABORADOR: ${f?.nome}\n• CPF: ${f?.cpf}\n• FUNÇÃO: ${funcao?.nome||''}\n• EMPRESA EMPREGADORA: ${emp?.razao||''} (CNPJ ${emp?.cnpj||''})\n• OBRA: ${obra?.nome||''}`;
+  }
+  const m=DB.maquinas.find(x=>x.id===refId); const emp=DB.empresas.find(e=>e.id===m?.empresaId); const obra=DB.obras.find(o=>o.id===m?.obraId);
+  return `• MÁQUINA: ${m?.descricao}\n• PATRIMÔNIO/SÉRIE: ${m?.patrimonio||'-'}\n• EMPRESA: ${emp?.razao||''}\n• OBRA: ${obra?.nome||''}`;
+}
+function uploadEmMassa(tipo, refId){
+  const ref = tipo==='funcionario'?DB.funcionarios.find(x=>x.id===refId):DB.maquinas.find(x=>x.id===refId);
+  if(!ref) return;
+  const exigidos = tipo==='funcionario'?docsExigidosFuncionario(ref):docsExigidosMaquina(ref);
+  if(!exigidos.length){ toast('Nenhum documento exigido','warn'); return; }
+  _massaCtx = {tipo, refId, exigidos};
+  showModal('Enviar vários arquivos', `
+    <div class="alert info" style="font-size:12px">Selecione vários PDFs/imagens. O sistema tenta identificar cada documento pelo <b>nome do arquivo</b>. Confira a coluna "Documento" e ajuste o que precisar antes de salvar.</div>
+    <div class="form-group"><input id="f_massa" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/jpg" onchange="montarMapaMassa()"></div>
+    <div id="mapaMassa"></div>
+    <div id="massaProg" style="display:none;text-align:center;padding:14px;background:#dbeafe;border-radius:8px;margin-top:10px;font-size:13px"></div>
+  `, async ()=>{ return await salvarMassa(); });
+}
+function montarMapaMassa(){
+  const inp=document.getElementById('f_massa'), box=document.getElementById('mapaMassa');
+  if(!inp||!box) return;
+  const files=[...(inp.files||[])];
+  if(!files.length){ box.innerHTML=''; return; }
+  const optsBase = de=>`<option value="${de.id}">${escapeHtml(de.nome)}</option>`;
+  box.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:4px 6px">Arquivo</th><th style="text-align:left;padding:4px 6px">Documento</th></tr></thead><tbody>'+
+    files.map((f,i)=>{
+      const m=_matchDoc(f.name,_massaCtx.exigidos);
+      const sel='<select id="m_doc_'+i+'" style="width:100%"><option value="">— ignorar —</option>'+
+        _massaCtx.exigidos.map(de=>'<option value="'+de.id+'"'+(m&&m.id===de.id?' selected':'')+'>'+escapeHtml(de.nome)+'</option>').join('')+'</select>';
+      return '<tr><td style="padding:4px 6px;border-top:1px solid #eee">'+escapeHtml(f.name)+'</td><td style="padding:4px 6px;border-top:1px solid #eee">'+sel+'</td></tr>';
+    }).join('')+'</tbody></table>';
+}
+async function salvarMassa(){
+  const inp=document.getElementById('f_massa'); const files=[...(inp?.files||[])];
+  if(!files.length){ toast('Selecione os arquivos','err'); return false; }
+  const {tipo, refId, exigidos} = _massaCtx;
+  const prog=document.getElementById('massaProg'); if(prog) prog.style.display='block';
+  const ctx = contextoRef(tipo, refId);
+  let ok=0, ign=0;
+  for(let i=0;i<files.length;i++){
+    const docId = document.getElementById('m_doc_'+i)?.value;
+    const de = docId ? exigidos.find(e=>e.id===docId) : null;
+    if(!de){ ign++; continue; }
+    const arq=files[i];
+    if(prog) prog.textContent='Enviando '+(i+1)+'/'+files.length+': '+arq.name;
+    const stamp=Date.now()+i; const safe=arq.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,80);
+    const arquivoPath=`${tipo}/${refId}/${docId}_${stamp}_${safe}`;
+    const {error:upErr}=await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:arq.type||'application/pdf', upsert:true});
+    if(upErr){ ign++; continue; }
+    let ia={iaStatus:'pendente',iaNota:''};
+    if(DB.config.iaHabilitada){ ia = DB.config.geminiApiKey ? await analisarComGemini(arq, de, ctx) : simularIA(); }
+    const validade = de.validadeDias ? (ia.validade || plusDays(de.validadeDias)) : null;
+    const emitido = (de.exigeData===false) ? '' : (ia.emissao || hoje());
+    const existing=getDoc(tipo,refId,docId,null);
+    const data={refTipo:tipo,refId,docId,obraId:null,arquivo:arq.name,arquivoPath,arquivoData:'',emitidoEm:emitido,validade,iaStatus:ia.iaStatus,iaNota:ia.iaNota,sesmtStatus:'pendente',sesmtMotivo:'',sesmtPor:null};
+    if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
+    ok++;
+  }
+  save(); closeModal(); toast(ok+' arquivo(s) enviado(s)'+(ign?', '+ign+' ignorado(s)':''), ok?'':'warn'); go(currentPage);
+  return true;
 }
 async function excluirDoc(docId){
   if(!confirm('Excluir este documento? Será possível reenviar depois.')) return;
@@ -2564,7 +2643,7 @@ function renderCatalogoDocs(){
   `;
 }
 function editCatalogoDoc(id){
-  const d = id ? DB.catalogoDocs.find(x=>x.id===id) : {id:'',nome:'',categoria:'funcionario',validadeDias:null,descricao:'',checklistIA:''};
+  const d = id ? DB.catalogoDocs.find(x=>x.id===id) : {id:'',nome:'',categoria:'funcionario',validadeDias:null,descricao:'',checklistIA:'',exigeData:true};
   showModal(id?'Editar Documento':'Novo Documento',`
     <div class="grid-2">
       <div class="form-group"><label>ID interno</label><input id="f_id" value="${d.id}" ${id?'disabled':''} placeholder="ex: aso, nr35"></div>
@@ -2578,6 +2657,7 @@ function editCatalogoDoc(id){
     </div>
     <div class="form-group"><label>Nome do Documento</label><input id="f_nome" value="${d.nome}"></div>
     <div class="form-group"><label>Validade (em dias) — vazio se não tem</label><input id="f_val" type="number" value="${d.validadeDias||''}" placeholder="ex: 365"></div>
+    <div class="form-group"><label style="cursor:pointer"><input type="checkbox" id="f_exigeData" ${d.exigeData!==false?'checked':''}> Exige data de emissão/validade</label><div style="font-size:11px;color:var(--muted)">Desmarque para documentos sem data (ex: Foto 3x4) — o campo de data não aparece e não cobra emissão.</div></div>
     <div class="form-group"><label>Descrição interna (aparece no app)</label><textarea id="f_desc" rows="2">${d.descricao||''}</textarea></div>
     <div class="form-group">
       <label>🤖 Checklist de validação da IA</label>
@@ -2588,7 +2668,7 @@ function editCatalogoDoc(id){
     const newId = id || val('f_id').toLowerCase().replace(/[^a-z0-9_]/g,'_');
     if(!newId||!val('f_nome')){ toast('Preencha ID e nome','err'); return false; }
     if(!id && DB.catalogoDocs.some(x=>x.id===newId)){ toast('Já existe doc com este ID','err'); return false; }
-    const data = {id:newId, categoria:val('f_cat'), nome:val('f_nome'), validadeDias:parseInt(val('f_val'))||null, descricao:val('f_desc'), checklistIA:val('f_check')};
+    const data = {id:newId, categoria:val('f_cat'), nome:val('f_nome'), validadeDias:parseInt(val('f_val'))||null, descricao:val('f_desc'), checklistIA:val('f_check'), exigeData:document.getElementById('f_exigeData').checked};
     if(id) Object.assign(d,data); else DB.catalogoDocs.push(data);
     save(); go('catalogo_docs'); toast('Documento salvo'); return true;
   }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{
@@ -3005,7 +3085,8 @@ function enviarNotificacoesEmLote(){
   if(currentPage==='notificacoes') go('notificacoes');
 }
 
-function renderNotificacoes(){
+function renderNotificacoes(jaAtualizou){
+  if(!jaAtualizou){ loadFromSupabase().then(()=>{ if(currentPage==='notificacoes') renderNotificacoes(true); }).catch(()=>{}); }
   const todosGrupos = pendenciasPorEmpresa();
   // Aplicar filtros de obra/empresa
   const grupos = {};
