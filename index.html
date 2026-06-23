@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.4">
+<meta name="app-version" content="2026.06.22.5">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2467,10 +2467,10 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         sb.storage.from('documentos').remove([existing.arquivoPath]).catch(()=>{});
       }
     }
+    let bgAnalise = false;
     if(arq && DB.config.iaHabilitada){
-      // a IA normalmente ja rodou ao selecionar o arquivo (analisarUploadIA); se nao, roda agora
-      if(_iaUpload) ia = _iaUpload;
-      else { document.getElementById('iaLoading').style.display='block'; ia = temGemini ? await analisarComGemini(arq, docExigido, contexto) : simularIA(); }
+      if(_iaUpload) ia = _iaUpload;            // ja analisado ao selecionar o arquivo
+      else { ia = {iaStatus:'pendente', iaNota:'🤖 Analisando em segundo plano… atualize em instantes.'}; bgAnalise = true; }
     } else if(existing && !arq) {
       ia = {iaStatus:existing.iaStatus, iaNota:existing.iaNota};
     }
@@ -2478,9 +2478,23 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
       iaStatus:ia.iaStatus, iaNota:ia.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
     save();
-    toast(`Documento enviado. IA: ${ia.iaStatus}${ia.iaNota?' — '+ia.iaNota.slice(0,80):''}`, ia.iaStatus==='recusado'?'err':ia.iaStatus==='duvida'?'warn':'');
     closeModal();
     go(currentPage);
+    if(bgAnalise){
+      // analisa sem travar a tela; atualiza o documento quando terminar
+      const _arq=arq,_de=docExigido,_ctx=contexto,_tg=temGemini,_k={tipo,refId,docId,obraId:obraId||null};
+      (async()=>{
+        const r = _tg ? await analisarComGemini(_arq,_de,_ctx) : simularIA();
+        const d = getDoc(_k.tipo,_k.refId,_k.docId,_k.obraId); if(!d) return;
+        d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
+        if(!(_de&&_de.exigeData===false)){ if(r.emissao) d.emitidoEm=r.emissao; if(_de&&_de.validadeDias&&r.validade) d.validade=r.validade; }
+        save(); if(currentPage) go(currentPage);
+        toast('IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
+      })();
+      toast('Documento enviado. IA analisando em 2º plano…');
+    } else {
+      toast(`Documento enviado. IA: ${ia.iaStatus}${ia.iaNota?' — '+ia.iaNota.slice(0,80):''}`, ia.iaStatus==='recusado'?'err':ia.iaStatus==='duvida'?'warn':'');
+    }
     return true;
   });
 }
@@ -2688,13 +2702,14 @@ function editCatalogoDoc(id){
     const data = {id:newId, categoria:val('f_cat'), nome:val('f_nome'), validadeDias:parseInt(val('f_val'))||null, descricao:val('f_desc'), checklistIA:val('f_check'), exigeData:document.getElementById('f_exigeData').checked};
     if(id) Object.assign(d,data); else DB.catalogoDocs.push(data);
     save(); go('catalogo_docs'); toast('Documento salvo'); return true;
-  }, id?[{label:'Excluir',cls:'btn-danger',fn:()=>{
-    if(confirm('Excluir do catálogo? Isso não remove docs já enviados.')){
-      DB.catalogoDocs=DB.catalogoDocs.filter(x=>x.id!==id);
-      DB.obras.forEach(o=>{o.docsEmpresa=o.docsEmpresa?.filter(x=>x!==id);o.docsFuncionarioBase=o.docsFuncionarioBase?.filter(x=>x!==id);o.docsMaquina=o.docsMaquina?.filter(x=>x!==id);});
-      DB.catalogoFuncoes.forEach(f=>{f.docsIds=f.docsIds?.filter(x=>x!==id);});
-      save(); go('catalogo_docs'); closeModal();
-    }
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{
+    if(!confirm('Excluir do catálogo? Isso não remove docs já enviados.')) return;
+    const {error} = await sb.from('catalogo_documentos').delete().eq('id', id); // senão volta no reload (sync é upsert-only)
+    if(error){ toast('Não foi possível excluir: '+error.message,'err'); return; }
+    DB.catalogoDocs=DB.catalogoDocs.filter(x=>x.id!==id);
+    DB.obras.forEach(o=>{o.docsEmpresa=o.docsEmpresa?.filter(x=>x!==id);o.docsFuncionarioBase=o.docsFuncionarioBase?.filter(x=>x!==id);o.docsMaquina=o.docsMaquina?.filter(x=>x!==id);});
+    DB.catalogoFuncoes.forEach(f=>{f.docsIds=f.docsIds?.filter(x=>x!==id);});
+    save(); go('catalogo_docs'); closeModal();
   }}]:[]);
 }
 
@@ -2739,11 +2754,12 @@ function editFuncao(id){
   }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{
     if(DB.funcionarios.some(c=>c.funcaoId==id)){ toast('Há colaboradores usando esta função','err'); return; }
     if(!confirm('Excluir função?')) return;
-    if(typeof id==='number' && id<1e9){
-      const {error} = await sb.from('catalogo_funcoes').delete().eq('id', id);
+    const nid = Number(id); // id chega como string do onclick; o delete no banco precisa do número
+    if(Number.isFinite(nid)){
+      const {error} = await sb.from('catalogo_funcoes').delete().eq('id', nid);
       if(error){ toast('Não foi possível excluir: '+error.message,'err'); return; }
     }
-    DB.catalogoFuncoes=DB.catalogoFuncoes.filter(x=>x.id!=id); save(); go('catalogo_funcoes'); closeModal();
+    DB.catalogoFuncoes=DB.catalogoFuncoes.filter(x=>String(x.id)!==String(id)); save(); go('catalogo_funcoes'); closeModal();
   }}]:[], false, 'lg');
 }
 
