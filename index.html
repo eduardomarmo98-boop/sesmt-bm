@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.5">
+<meta name="app-version" content="2026.06.22.6">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1561,8 +1561,7 @@ function fileToBase64(file){
 }
 
 async function analisarComGemini(file, docExigido, contexto){
-  const apiKey = DB.config.geminiApiKey;
-  if(!apiKey) return simularIA();
+  if(DB.config.iaHabilitada===false) return {iaStatus:'pendente', iaNota:'Análise por IA desativada nas Configurações.'};
   if(!file) return {iaStatus:'pendente', iaNota:'Sem arquivo para analisar.'};
 
   const checklist = docExigido.checklistIA || docExigido.descricao || '';
@@ -1639,53 +1638,36 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
   try{
     const base64 = await fileToBase64(file);
     const mimeType = file.type || 'application/pdf';
-    const modelo = DB.config.geminiModel||'gemini-2.0-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const genCfg = {temperature:0.15, maxOutputTokens:8192, responseMimeType:'application/json'};
-    // Modelos 2.5+/3 usam "thinking", que consome o orcamento de tokens e trunca/zera o JSON -> desliga
-    if(/2\.5|gemini-3/.test(modelo)) genCfg.thinkingConfig = {thinkingBudget:0};
-    const reqBody = JSON.stringify({
-      contents:[{parts:[
-        {inline_data:{mime_type:mimeType, data:base64}},
-        {text:prompt}
-      ]}],
-      generationConfig: genCfg
-    });
-    let res;
-    for(let tentativa=1; tentativa<=4; tentativa++){
-      res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody});
-      if(res.ok) break;
-      // 429/500/503 = sobrecarga temporaria do servidor de IA -> espera e tenta de novo
-      if([429,500,503].includes(res.status) && tentativa<4){ await new Promise(r=>setTimeout(r, tentativa*1800)); continue; }
-      break;
+    // A análise roda no SERVIDOR (Edge Function): a chave/modelo ficam no banco e valem para
+    // TODOS os perfis — inclusive fornecedor, que não enxerga a config por RLS.
+    const { data, error } = await sb.functions.invoke('analisar-documento', { body:{ base64, mimeType, prompt } });
+    if(error || !data || !data.ok){
+      const reason = (data && data.reason) || 'erro';
+      if(reason==='no_key' || reason==='disabled') return simularIA(); // servidor sem chave -> modo simulado
+      const ocupado = !!(data && [429,500,503].includes(data.status));
+      return {iaStatus:'pendente', iaNota: ocupado
+        ? 'Análise automática indisponível no momento (servidor de IA ocupado). Clique em "🤖 Analisar" de novo em instantes.'
+        : 'Não foi possível analisar automaticamente agora. Tente "🤖 Analisar" de novo ou avalie manualmente.'};
     }
-    if(!res.ok){
-      const msg = [429,500,503].includes(res.status)
-        ? 'Análise automática indisponível no momento (servidor de IA ocupado). O documento foi salvo; clique em "Atualizar" para tentar de novo, ou avalie manualmente.'
-        : 'Não foi possível analisar automaticamente agora. Tente reenviar ou avalie manualmente.';
-      return {iaStatus:'pendente', iaNota: msg};
-    }
-    const data = await res.json();
-    const cand = data.candidates?.[0];
-    const text = (cand?.content?.parts||[]).map(p=>p&&p.text?p.text:'').join('').trim();
+    const text = String(data.text||'').trim();
     if(!text){
-      return {iaStatus:'pendente', iaNota: (cand?.finishReason==='MAX_TOKENS')
-        ? 'A IA atingiu o limite de tamanho e não concluiu a análise. Reenvie; se persistir, troque o modelo para gemini-2.0-flash em Configurações.'
-        : 'A IA não retornou conteúdo desta vez. Reenvie ou avalie manualmente.'};
+      return {iaStatus:'pendente', iaNota: (data.finishReason==='MAX_TOKENS')
+        ? 'A IA atingiu o limite e não concluiu. Tente "🤖 Analisar" de novo; se persistir, use gemini-2.0-flash em Configurações.'
+        : 'A IA não retornou conteúdo desta vez. Tente "🤖 Analisar" de novo.'};
     }
     const cleaned = text.replace(/```json|```/g,'').trim();
     let parsed;
     try{ parsed = JSON.parse(cleaned); }
     catch(e){
       const m = cleaned.match(/\{[\s\S]*\}/);
-      if(m){ try{ parsed = JSON.parse(m[0]); }catch(e2){ return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON. Texto: '+cleaned.slice(0,300)}; } }
-      else return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON. Texto: '+cleaned.slice(0,300)};
+      if(m){ try{ parsed = JSON.parse(m[0]); }catch(e2){ return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON.'}; } }
+      else return {iaStatus:'pendente', iaNota:'IA respondeu fora do formato JSON.'};
     }
     const status = ['aprovado','duvida','recusado'].includes(parsed.status) ? parsed.status : 'duvida';
     const L = parsed.leitura||{};
     return {iaStatus:status, iaNota: formatarNotaIA(parsed), emissao:_normData(L.emissao), validade:_normData(L.validade)};
   } catch(e){
-    return {iaStatus:'pendente', iaNota:'Falha ao chamar Gemini: '+e.message};
+    return {iaStatus:'pendente', iaNota:'Falha ao analisar: '+e.message};
   }
 }
 
@@ -2374,6 +2356,7 @@ function renderDocRow(tipo, ref, de, obraId){
     <div class="small-actions">
       ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Abrir / visualizar documento" onclick="abrirDoc(${doc.id})">👁️ Abrir</button>`:''}
       ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
+      ${doc && doc.arquivoPath && DB.config.iaHabilitada!==false ? `<button class="btn btn-secondary btn-sm" title="Analisar com IA em 2º plano" onclick="analisarDocBg(${doc.id})">🤖 Analisar</button>`:''}
       ${doc && pode('aprovar_doc') && doc.sesmtStatus==='pendente' ? `
         <button class="btn btn-success btn-sm" title="Aprovar" onclick="aprovarDoc(${doc.id})">✓</button>
         <button class="btn btn-danger btn-sm" title="Recusar" onclick="recusarDoc(${doc.id})">✗</button>` : ''}
@@ -2425,7 +2408,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     const obra = DB.obras.find(o=>o.id===m?.obraId);
     contexto = `• MÁQUINA: ${m?.descricao}\n• PATRIMÔNIO/SÉRIE: ${m?.patrimonio||'-'}\n• EMPRESA: ${emp?.razao||''}\n• OBRA: ${obra?.nome||''}`;
   }
-  const temGemini = !!DB.config.geminiApiKey;
+  const temGemini = DB.config.iaHabilitada!==false; // a chave fica no servidor; IA vale p/ todos os perfis
   _iaUpload = null;
   _upCtx = {docExigido, contexto, temGemini, validadeDias};
   showModal(`Enviar: ${docNome}`, `
@@ -2484,7 +2467,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
       // analisa sem travar a tela; atualiza o documento quando terminar
       const _arq=arq,_de=docExigido,_ctx=contexto,_tg=temGemini,_k={tipo,refId,docId,obraId:obraId||null};
       (async()=>{
-        const r = _tg ? await analisarComGemini(_arq,_de,_ctx) : simularIA();
+        const r = await analisarComGemini(_arq,_de,_ctx);
         const d = getDoc(_k.tipo,_k.refId,_k.docId,_k.obraId); if(!d) return;
         d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
         if(!(_de&&_de.exigeData===false)){ if(r.emissao) d.emitidoEm=r.emissao; if(_de&&_de.validadeDias&&r.validade) d.validade=r.validade; }
@@ -2506,7 +2489,7 @@ async function analisarUploadIA(){
   const load=document.getElementById('iaLoading'), resBox=document.getElementById('iaResultado');
   if(load) load.style.display='block'; if(resBox) resBox.innerHTML='';
   let ia;
-  try{ ia = _upCtx.temGemini ? await analisarComGemini(arq, _upCtx.docExigido, _upCtx.contexto) : simularIA(); }
+  try{ ia = await analisarComGemini(arq, _upCtx.docExigido, _upCtx.contexto); }
   catch(e){ ia = {iaStatus:'pendente', iaNota:'Falha ao analisar: '+e.message}; }
   if(load) load.style.display='none';
   _iaUpload = ia;
@@ -2601,7 +2584,7 @@ async function salvarMassa(){
     const {error:upErr}=await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:arq.type||'application/pdf', upsert:true});
     if(upErr){ ign++; continue; }
     let ia={iaStatus:'pendente',iaNota:''};
-    if(DB.config.iaHabilitada){ ia = DB.config.geminiApiKey ? await analisarComGemini(arq, de, ctx) : simularIA(); }
+    if(DB.config.iaHabilitada!==false){ ia = await analisarComGemini(arq, de, ctx); }
     const validade = de.validadeDias ? (ia.validade || plusDays(de.validadeDias)) : null;
     const emitido = (de.exigeData===false) ? '' : (ia.emissao || hoje());
     const existing=getDoc(tipo,refId,docId,obraId);
@@ -3309,6 +3292,25 @@ async function testarGemini(){
 }
 
 /* ===== DOWNLOAD INDIVIDUAL E EM MASSA ===== */
+async function analisarDocBg(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(!d || !d.arquivoPath){ toast('Sem arquivo para analisar','warn'); return; }
+  if(DB.config.iaHabilitada===false){ toast('Análise por IA desativada','warn'); return; }
+  d.iaStatus='pendente'; d.iaNota='🤖 Analisando em segundo plano…'; save(); go(currentPage);
+  toast('IA analisando em 2º plano…');
+  try{
+    const {data:blob, error} = await sb.storage.from('documentos').download(d.arquivoPath);
+    if(error || !blob) throw new Error('download');
+    const de = DB.catalogoDocs.find(c=>c.id===d.docId) || {nome:d.docId, exigeData:true};
+    const ctx = contextoRef(d.refTipo, d.refId, d.obraId);
+    const r = await analisarComGemini(blob, de, ctx);
+    const cur = DB.documentos.find(x=>x.id===docId); if(!cur) return;
+    cur.iaStatus=r.iaStatus; cur.iaNota=r.iaNota;
+    if(de.exigeData!==false){ if(r.emissao) cur.emitidoEm=r.emissao; if(de.validadeDias&&r.validade) cur.validade=r.validade; }
+    save(); if(currentPage) go(currentPage);
+    toast('IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
+  }catch(e){ const cur=DB.documentos.find(x=>x.id===docId); if(cur){ cur.iaNota='Falha ao analisar. Tente de novo.'; save(); go(currentPage); } toast('Falha na análise da IA','err'); }
+}
 async function abrirDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
   if(!d || !d.arquivoPath){ toast('Este documento não tem arquivo para abrir','warn'); return; }
