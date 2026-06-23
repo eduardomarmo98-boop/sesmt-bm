@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.6">
+<meta name="app-version" content="2026.06.22.8">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1560,6 +1560,32 @@ function fileToBase64(file){
   });
 }
 
+async function _geminiCall(modelo, base64, mimeType, prompt){
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(DB.config.geminiApiKey)}`;
+  const genCfg = {temperature:0.15, maxOutputTokens:8192, responseMimeType:'application/json'};
+  if(/2\.5|gemini-3/.test(modelo)) genCfg.thinkingConfig = {thinkingBudget:0};
+  const reqBody = JSON.stringify({contents:[{parts:[{inline_data:{mime_type:mimeType, data:base64}},{text:prompt}]}], generationConfig: genCfg});
+  let res;
+  for(let t=1;t<=4;t++){
+    res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody});
+    if(res.ok) break;
+    if([429,500,503].includes(res.status) && t<4){ await new Promise(r=>setTimeout(r, t*1500)); continue; }
+    break;
+  }
+  if(!res.ok) return {ok:false, status:res.status};
+  const data = await res.json(); const cand = data.candidates?.[0];
+  const text = (cand?.content?.parts||[]).map(p=>p&&p.text?p.text:'').join('');
+  return {ok:true, text, finishReason: cand?.finishReason||''};
+}
+async function _geminiDireto(base64, mimeType, prompt){
+  const modelo = DB.config.geminiModel||'gemini-2.0-flash';
+  let r = await _geminiCall(modelo, base64, mimeType, prompt);
+  // fallback automático: modelo sobrecarregado (429/503) -> tenta o 2.0-flash (mais disponível)
+  if(!r.ok && [429,500,503].includes(r.status) && modelo!=='gemini-2.0-flash'){
+    r = await _geminiCall('gemini-2.0-flash', base64, mimeType, prompt);
+  }
+  return r;
+}
 async function analisarComGemini(file, docExigido, contexto){
   if(DB.config.iaHabilitada===false) return {iaStatus:'pendente', iaNota:'Análise por IA desativada nas Configurações.'};
   if(!file) return {iaStatus:'pendente', iaNota:'Sem arquivo para analisar.'};
@@ -1638,22 +1664,29 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
   try{
     const base64 = await fileToBase64(file);
     const mimeType = file.type || 'application/pdf';
-    // A análise roda no SERVIDOR (Edge Function): a chave/modelo ficam no banco e valem para
-    // TODOS os perfis — inclusive fornecedor, que não enxerga a config por RLS.
-    const { data, error } = await sb.functions.invoke('analisar-documento', { body:{ base64, mimeType, prompt } });
-    if(error || !data || !data.ok){
-      const reason = (data && data.reason) || 'erro';
-      if(reason==='no_key' || reason==='disabled') return simularIA(); // servidor sem chave -> modo simulado
-      const ocupado = !!(data && [429,500,503].includes(data.status));
-      return {iaStatus:'pendente', iaNota: ocupado
-        ? 'Análise automática indisponível no momento (servidor de IA ocupado). Clique em "🤖 Analisar" de novo em instantes.'
-        : 'Não foi possível analisar automaticamente agora. Tente "🤖 Analisar" de novo ou avalie manualmente.'};
+    let text='', finishReason='', falhou=null;
+    if(DB.config.geminiApiKey){
+      // Conta COM chave (diretoria/SESMT): chamada DIRETA ao Gemini — rápida e estável (como antes)
+      const r = await _geminiDireto(base64, mimeType, prompt);
+      if(r.ok){ text=r.text||''; finishReason=r.finishReason||''; } else falhou=r;
+    } else {
+      // Conta SEM chave (fornecedor): roda no SERVIDOR (Edge Function), que tem a chave
+      const { data, error } = await sb.functions.invoke('analisar-documento', { body:{ base64, mimeType, prompt } });
+      if(!error && data && data.ok){ text=String(data.text||''); finishReason=data.finishReason||''; }
+      else if(data && (data.reason==='no_key' || data.reason==='disabled')) return simularIA();
+      else falhou={status:(data && data.status)||0};
     }
-    const text = String(data.text||'').trim();
+    if(falhou){
+      const ocupado = [429,500,503].includes(falhou.status);
+      return {iaStatus:'pendente', iaNota: ocupado
+        ? 'IA ocupada no momento. Clique em "🤖 Analisar" de novo em alguns segundos.'
+        : 'Não foi possível analisar agora. Clique em "🤖 Analisar" de novo ou avalie manualmente.'};
+    }
+    text = text.trim();
     if(!text){
-      return {iaStatus:'pendente', iaNota: (data.finishReason==='MAX_TOKENS')
-        ? 'A IA atingiu o limite e não concluiu. Tente "🤖 Analisar" de novo; se persistir, use gemini-2.0-flash em Configurações.'
-        : 'A IA não retornou conteúdo desta vez. Tente "🤖 Analisar" de novo.'};
+      return {iaStatus:'pendente', iaNota: (finishReason==='MAX_TOKENS')
+        ? 'A IA atingiu o limite e não concluiu. Clique em "🤖 Analisar" de novo.'
+        : 'A IA não retornou conteúdo. Clique em "🤖 Analisar" de novo.'};
     }
     const cleaned = text.replace(/```json|```/g,'').trim();
     let parsed;
@@ -2584,7 +2617,7 @@ async function salvarMassa(){
     const {error:upErr}=await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:arq.type||'application/pdf', upsert:true});
     if(upErr){ ign++; continue; }
     let ia={iaStatus:'pendente',iaNota:''};
-    if(DB.config.iaHabilitada!==false){ ia = await analisarComGemini(arq, de, ctx); }
+    if(DB.config.iaHabilitada!==false){ if(i>0) await new Promise(r=>setTimeout(r,700)); ia = await analisarComGemini(arq, de, ctx); }
     const validade = de.validadeDias ? (ia.validade || plusDays(de.validadeDias)) : null;
     const emitido = (de.exigeData===false) ? '' : (ia.emissao || hoje());
     const existing=getDoc(tipo,refId,docId,obraId);
