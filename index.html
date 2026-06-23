@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.10">
+<meta name="app-version" content="2026.06.23.1">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -364,7 +364,7 @@ function save(){
 }
 function load(){
   DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],
-    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiModel:'gemini-2.0-flash',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
+    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
 }
 
 async function loadFromSupabase(){
@@ -394,7 +394,7 @@ async function loadFromSupabase(){
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
       const c = cfg.data;
-      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiModel:c.gemini_model||'gemini-2.0-flash',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
+      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiApiKey2:c.gemini_api_key_2||'',geminiApiKey3:c.gemini_api_key_3||'',geminiModel:c.gemini_model||'gemini-2.5-flash-lite',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
       // cache da marca para a tela de login (acessível antes do auth)
       try{ localStorage.setItem('bm_branding', JSON.stringify({logoData:DB.config.logoData,nomeEmpresa:DB.config.nomeEmpresa,corPrimaria:DB.config.corPrimaria,corSecundaria:DB.config.corSecundaria})); }catch(e){}
     }
@@ -407,7 +407,7 @@ async function loadFromSupabase(){
 async function syncToSupabase(){
   if(!session) return;
   const c = DB.config;
-  await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_model:c.geminiModel||'gemini-2.0-flash', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'});
+  await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'});
   if(DB.catalogoDocs.length){
     await sb.from('catalogo_documentos').upsert(DB.catalogoDocs.map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||'',exige_data:d.exigeData!==false})));
   }
@@ -563,7 +563,9 @@ function _seedDESATIVADO(){
       diasAvisoVencimento:30,
       iaHabilitada:true,
       geminiApiKey:'',
-      geminiModel:'gemini-2.0-flash',
+      geminiApiKey2:'',
+      geminiApiKey3:'',
+      geminiModel:'gemini-2.5-flash-lite',
       logoData:'',
       nomeEmpresa:'BRANDÃO & MARMO',
       corPrimaria:'#1a3d7c',
@@ -1560,9 +1562,9 @@ function fileToBase64(file){
   });
 }
 
-async function _geminiCall(modelo, base64, mimeType, prompt, tries){
+async function _geminiCall(modelo, apiKey, base64, mimeType, prompt, tries){
   tries = tries||3;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(DB.config.geminiApiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const genCfg = {temperature:0.15, maxOutputTokens:8192, responseMimeType:'application/json'};
   if(/2\.5|gemini-3/.test(modelo)) genCfg.thinkingConfig = {thinkingBudget:0};
   const reqBody = JSON.stringify({contents:[{parts:[{inline_data:{mime_type:mimeType, data:base64}},{text:prompt}]}], generationConfig: genCfg});
@@ -1571,7 +1573,8 @@ async function _geminiCall(modelo, base64, mimeType, prompt, tries){
     try{ res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody}); }
     catch(e){ if(t<tries){ await new Promise(r=>setTimeout(r, t*1200)); continue; } return {ok:false, status:0}; }
     if(res.ok) break;
-    if([429,500,503].includes(res.status) && t<tries){ await new Promise(r=>setTimeout(r, t*1200)); continue; }
+    // só repete em sobrecarga transitória (500/503). 429 = cota esgotada -> NÃO repetir (gasta cota à toa)
+    if([500,503].includes(res.status) && t<tries){ await new Promise(r=>setTimeout(r, t*1200)); continue; }
     break;
   }
   if(!res.ok) return {ok:false, status:res.status};
@@ -1579,17 +1582,32 @@ async function _geminiCall(modelo, base64, mimeType, prompt, tries){
   const text = (cand?.content?.parts||[]).map(p=>p&&p.text?p.text:'').join('');
   return {ok:true, text, finishReason: cand?.finishReason||''};
 }
+function _geminiKeys(){
+  // chaves de PROJETOS Google diferentes = cotas gratuitas independentes
+  return [DB.config.geminiApiKey, DB.config.geminiApiKey2, DB.config.geminiApiKey3]
+    .map(k=>(k||'').trim()).filter(Boolean);
+}
 async function _geminiDireto(base64, mimeType, prompt){
-  const modelo = DB.config.geminiModel||'gemini-2.0-flash';
-  // tenta o modelo escolhido (poucas vezes); se falhar OU vier vazio, cai no 2.0-flash (estável)
-  let r = await _geminiCall(modelo, base64, mimeType, prompt, 2);
-  const vazio = r.ok && !(r.text && r.text.trim());
-  if((!r.ok || vazio) && modelo!=='gemini-2.0-flash'){
-    const r2 = await _geminiCall('gemini-2.0-flash', base64, mimeType, prompt, 4);
-    if(r2.ok && r2.text && r2.text.trim()) return r2;
-    return r.ok ? r : r2;
+  const modelo = DB.config.geminiModel||'gemini-2.5-flash-lite';
+  const keys = _geminiKeys();
+  if(!keys.length) return {ok:false, status:0};
+  let last = {ok:false, status:0};
+  // 1) modelo escolhido, rotacionando as chaves. Se a chave i estourar a cota diária
+  //    (429) ou falhar/voltar vazia, cai SOZINHO na próxima chave (outro projeto/cota).
+  for(let i=0;i<keys.length;i++){
+    const r = await _geminiCall(modelo, keys[i], base64, mimeType, prompt, 2);
+    if(r.ok && r.text && r.text.trim()) return r;
+    last = r;
   }
-  return r;
+  // 2) último recurso: gemini-2.5-flash (cota própria, mais robusto) nas mesmas chaves
+  if(modelo!=='gemini-2.5-flash'){
+    for(let i=0;i<keys.length;i++){
+      const r = await _geminiCall('gemini-2.5-flash', keys[i], base64, mimeType, prompt, 1);
+      if(r.ok && r.text && r.text.trim()) return r;
+      last = r;
+    }
+  }
+  return last;
 }
 async function analisarComGemini(file, docExigido, contexto){
   if(DB.config.iaHabilitada===false) return {iaStatus:'pendente', iaNota:'Análise por IA desativada nas Configurações.'};
@@ -1682,9 +1700,11 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
       else falhou={status:(data && data.status)||0};
     }
     if(falhou){
-      const ocupado = [429,500,503].includes(falhou.status);
-      return {iaStatus:'pendente', iaNota: ocupado
-        ? 'IA ocupada no momento. Clique em "🤖 Analisar" de novo em alguns segundos.'
+      const cota = falhou.status===429;
+      const ocupado = [500,503].includes(falhou.status);
+      return {iaStatus:'pendente', iaNota: cota
+        ? 'Cota diária da IA esgotada em TODAS as chaves configuradas (plano gratuito do Google). Renova à meia-noite no Pacífico (~4h-5h da manhã no Brasil). Para mais capacidade: adicione outra chave (projeto Google novo) em Configurações, ou ative o faturamento. Por enquanto, avalie manualmente.'
+        : ocupado ? 'IA ocupada no momento. Clique em "🤖 Analisar" de novo em alguns segundos.'
         : 'Não foi possível analisar agora. Clique em "🤖 Analisar" de novo ou avalie manualmente.'};
     }
     text = text.trim();
@@ -3235,15 +3255,16 @@ function renderConfig(){
     <div class="card">
       <h3 style="margin-bottom:6px">🤖 Análise por IA (Google Gemini)</h3>
       <div class="alert info" style="font-size:12px;margin-bottom:14px">
-        <b>Gemini é gratuito</b> para até ~1.500 análises/dia. Crie sua chave em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--bm-blue)">aistudio.google.com/app/apikey</a> → "Create API key" → copie e cole abaixo.
+        <b>Gemini é gratuito</b> (~1.500 análises/dia por chave). <b>Dica:</b> crie 2-3 chaves em <u>projetos Google diferentes</u> em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--bm-blue)">aistudio.google.com/app/apikey</a> e cole abaixo — cada chave tem cota grátis própria e o sistema <b>troca sozinho</b> quando uma estoura o limite do dia.
       </div>
       <div class="form-group"><label><input type="checkbox" id="cf_ia" ${c.iaHabilitada?'checked':''} style="width:auto"> Habilitar análise por IA ao enviar documentos</label></div>
-      <div class="form-group"><label>Chave da API Gemini</label><input id="cf_gem" type="password" value="${c.geminiApiKey||''}" placeholder="AIzaSy..."></div>
+      <div class="form-group"><label>Chave da API Gemini (principal)</label><input id="cf_gem" type="password" value="${c.geminiApiKey||''}" placeholder="AIzaSy..."></div>
+      <div class="form-group"><label>Chave reserva 2 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem2" type="password" value="${c.geminiApiKey2||''}" placeholder="AIzaSy..."></div>
+      <div class="form-group"><label>Chave reserva 3 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem3" type="password" value="${c.geminiApiKey3||''}" placeholder="AIzaSy..."></div>
       <div class="form-group" style="max-width:280px"><label>Modelo</label>
         <select id="cf_gemmod">
-          <option value="gemini-2.0-flash" ${(c.geminiModel||'gemini-2.0-flash')==='gemini-2.0-flash'?'selected':''}>gemini-2.0-flash (rápido, recomendado)</option>
+          <option value="gemini-2.5-flash-lite" ${(c.geminiModel||'gemini-2.5-flash-lite')==='gemini-2.5-flash-lite'?'selected':''}>gemini-2.5-flash-lite (rápido e econômico, recomendado)</option>
           <option value="gemini-2.5-flash" ${c.geminiModel==='gemini-2.5-flash'?'selected':''}>gemini-2.5-flash (mais preciso)</option>
-          <option value="gemini-1.5-flash" ${c.geminiModel==='gemini-1.5-flash'?'selected':''}>gemini-1.5-flash (legado)</option>
         </select>
       </div>
       <button class="btn btn-secondary btn-sm" onclick="testarGemini()">🧪 Testar conexão</button>
@@ -3260,7 +3281,9 @@ function salvarConfig(){
   DB.config.diasAvisoVencimento=parseInt(val('cf_dias'))||30;
   DB.config.iaHabilitada=document.getElementById('cf_ia').checked;
   DB.config.geminiApiKey=val('cf_gem');
-  DB.config.geminiModel=val('cf_gemmod')||'gemini-2.0-flash';
+  DB.config.geminiApiKey2=val('cf_gem2');
+  DB.config.geminiApiKey3=val('cf_gem3');
+  DB.config.geminiModel=val('cf_gemmod')||'gemini-2.5-flash-lite';
   DB.config.nomeEmpresa=val('cf_nome')||'BRANDÃO & MARMO';
   DB.config.corPrimaria=val('cf_cor1')||'#1a3d7c';
   DB.config.corSecundaria=val('cf_cor2')||'#F88800';
@@ -3314,7 +3337,7 @@ async function enviarWebhook(payload){
 
 async function testarGemini(){
   const key = val('cf_gem');
-  const model = val('cf_gemmod')||'gemini-2.0-flash';
+  const model = val('cf_gemmod')||'gemini-2.5-flash-lite';
   const el = document.getElementById('testRes');
   if(!key){ el.innerHTML = '<span style="color:var(--crit)">Cole a chave primeiro</span>'; return; }
   el.innerHTML = '⏳ Testando...';
