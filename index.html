@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.8">
+<meta name="app-version" content="2026.06.22.10">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1560,16 +1560,18 @@ function fileToBase64(file){
   });
 }
 
-async function _geminiCall(modelo, base64, mimeType, prompt){
+async function _geminiCall(modelo, base64, mimeType, prompt, tries){
+  tries = tries||3;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(DB.config.geminiApiKey)}`;
   const genCfg = {temperature:0.15, maxOutputTokens:8192, responseMimeType:'application/json'};
   if(/2\.5|gemini-3/.test(modelo)) genCfg.thinkingConfig = {thinkingBudget:0};
   const reqBody = JSON.stringify({contents:[{parts:[{inline_data:{mime_type:mimeType, data:base64}},{text:prompt}]}], generationConfig: genCfg});
   let res;
-  for(let t=1;t<=4;t++){
-    res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody});
+  for(let t=1;t<=tries;t++){
+    try{ res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:reqBody}); }
+    catch(e){ if(t<tries){ await new Promise(r=>setTimeout(r, t*1200)); continue; } return {ok:false, status:0}; }
     if(res.ok) break;
-    if([429,500,503].includes(res.status) && t<4){ await new Promise(r=>setTimeout(r, t*1500)); continue; }
+    if([429,500,503].includes(res.status) && t<tries){ await new Promise(r=>setTimeout(r, t*1200)); continue; }
     break;
   }
   if(!res.ok) return {ok:false, status:res.status};
@@ -1579,10 +1581,13 @@ async function _geminiCall(modelo, base64, mimeType, prompt){
 }
 async function _geminiDireto(base64, mimeType, prompt){
   const modelo = DB.config.geminiModel||'gemini-2.0-flash';
-  let r = await _geminiCall(modelo, base64, mimeType, prompt);
-  // fallback automático: modelo sobrecarregado (429/503) -> tenta o 2.0-flash (mais disponível)
-  if(!r.ok && [429,500,503].includes(r.status) && modelo!=='gemini-2.0-flash'){
-    r = await _geminiCall('gemini-2.0-flash', base64, mimeType, prompt);
+  // tenta o modelo escolhido (poucas vezes); se falhar OU vier vazio, cai no 2.0-flash (estável)
+  let r = await _geminiCall(modelo, base64, mimeType, prompt, 2);
+  const vazio = r.ok && !(r.text && r.text.trim());
+  if((!r.ok || vazio) && modelo!=='gemini-2.0-flash'){
+    const r2 = await _geminiCall('gemini-2.0-flash', base64, mimeType, prompt, 4);
+    if(r2.ok && r2.text && r2.text.trim()) return r2;
+    return r.ok ? r : r2;
   }
   return r;
 }
@@ -2411,7 +2416,6 @@ function dropOnRow(e,tipo,refId,docId,docNome,validadeDias,obraId){
       const dt = new DataTransfer(); dt.items.add(f);
       arq.files = dt.files;
       atualizarDropLabel(arq);
-      analisarUploadIA();
     }
   }, 120);
 }
@@ -2451,7 +2455,7 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         <div style="font-size:30px;margin-bottom:4px">📎</div>
         <div id="dropLabel" style="color:var(--muted);font-size:13px"><b>Clique</b> ou <b>arraste o PDF</b> aqui</div>
       </div>
-      <input id="f_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg" style="display:none" onchange="atualizarDropLabel(this); analisarUploadIA()">
+      <input id="f_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg" style="display:none" onchange="atualizarDropLabel(this)">
     </div>
     <div class="alert ${temGemini?'success':'info'}">
       ${temGemini ? '🤖 <b>Análise por IA ativa</b> — Gemini vai ler o PDF e validar automaticamente.' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
@@ -2469,7 +2473,6 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     const arq = document.getElementById('f_arq').files[0];
     const nomeArq = arq?arq.name:(existing?.arquivo||'documento.pdf');
     if(!arq && !existing){ toast('Selecione um arquivo PDF','err'); return false; }
-    let ia = {iaStatus:'pendente',iaNota:''};
     let arquivoPath = existing?.arquivoPath||'';
     if(arq){
       const stamp = Date.now();
@@ -2483,34 +2486,26 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         sb.storage.from('documentos').remove([existing.arquivoPath]).catch(()=>{});
       }
     }
-    let bgAnalise = false;
-    if(arq && DB.config.iaHabilitada){
-      if(_iaUpload) ia = _iaUpload;            // ja analisado ao selecionar o arquivo
-      else { ia = {iaStatus:'pendente', iaNota:'🤖 Analisando em segundo plano… atualize em instantes.'}; bgAnalise = true; }
-    } else if(existing && !arq) {
-      ia = {iaStatus:existing.iaStatus, iaNota:existing.iaNota};
-    }
-    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm:(docExigido&&docExigido.exigeData===false)?'':val('f_emit'),validade:validadeDias?val('f_val'):null,
-      iaStatus:ia.iaStatus, iaNota:ia.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
+    const semData = !!(docExigido&&docExigido.exigeData===false);
+    const vaiAnalisar = !!(arq && DB.config.iaHabilitada!==false);
+    const iaIni = vaiAnalisar ? {iaStatus:'pendente', iaNota:'🤖 Analisando documento…'}
+      : (existing && !arq ? {iaStatus:existing.iaStatus, iaNota:existing.iaNota} : {iaStatus:'pendente', iaNota:''});
+    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm: semData?'':val('f_emit'), validade: validadeDias?val('f_val'):null,
+      iaStatus:iaIni.iaStatus, iaNota:iaIni.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
-    save();
-    closeModal();
-    go(currentPage);
-    if(bgAnalise){
-      // analisa sem travar a tela; atualiza o documento quando terminar
-      const _arq=arq,_de=docExigido,_ctx=contexto,_tg=temGemini,_k={tipo,refId,docId,obraId:obraId||null};
+    save(); closeModal(); go(currentPage);   // sai da tela JÁ — não espera a IA
+    if(vaiAnalisar){
+      toast('Documento enviado. A IA está analisando…');
+      const _arq=arq,_de=docExigido,_ctx=contexto,_k={tipo,refId,docId,obraId:obraId||null},_semData=semData,_vd=validadeDias;
       (async()=>{
         const r = await analisarComGemini(_arq,_de,_ctx);
         const d = getDoc(_k.tipo,_k.refId,_k.docId,_k.obraId); if(!d) return;
         d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
-        if(!(_de&&_de.exigeData===false)){ if(r.emissao) d.emitidoEm=r.emissao; if(_de&&_de.validadeDias&&r.validade) d.validade=r.validade; }
+        if(!_semData){ if(r.emissao) d.emitidoEm=r.emissao; if(_vd && r.validade) d.validade=r.validade; }
         save(); if(currentPage) go(currentPage);
-        toast('IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
+        toast('IA: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
       })();
-      toast('Documento enviado. IA analisando em 2º plano…');
-    } else {
-      toast(`Documento enviado. IA: ${ia.iaStatus}${ia.iaNota?' — '+ia.iaNota.slice(0,80):''}`, ia.iaStatus==='recusado'?'err':ia.iaStatus==='duvida'?'warn':'');
-    }
+    } else { toast('Documento enviado.'); }
     return true;
   });
 }
@@ -2604,8 +2599,9 @@ async function salvarMassa(){
   if(!files.length){ toast('Selecione os arquivos','err'); return false; }
   const {tipo, refId, obraId, exigidos} = _massaCtx;
   const prog=document.getElementById('massaProg'); if(prog) prog.style.display='block';
-  const ctx = contextoRef(tipo, refId, obraId);
-  let ok=0, ign=0;
+  const analisarIA = DB.config.iaHabilitada!==false;
+  const pendentes=[]; let ok=0, ign=0;
+  // 1) sobe e SALVA todos rapidinho (só espera o upload do arquivo)
   for(let i=0;i<files.length;i++){
     const docId = document.getElementById('m_doc_'+i)?.value;
     const de = docId ? exigidos.find(e=>e.id===docId) : null;
@@ -2616,16 +2612,32 @@ async function salvarMassa(){
     const arquivoPath=`${tipo}/${refId}/${docId}_${stamp}_${safe}`;
     const {error:upErr}=await sb.storage.from('documentos').upload(arquivoPath, arq, {contentType:arq.type||'application/pdf', upsert:true});
     if(upErr){ ign++; continue; }
-    let ia={iaStatus:'pendente',iaNota:''};
-    if(DB.config.iaHabilitada!==false){ if(i>0) await new Promise(r=>setTimeout(r,700)); ia = await analisarComGemini(arq, de, ctx); }
-    const validade = de.validadeDias ? (ia.validade || plusDays(de.validadeDias)) : null;
-    const emitido = (de.exigeData===false) ? '' : (ia.emissao || hoje());
     const existing=getDoc(tipo,refId,docId,obraId);
-    const data={refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:arq.name,arquivoPath,arquivoData:'',emitidoEm:emitido,validade,iaStatus:ia.iaStatus,iaNota:ia.iaNota,sesmtStatus:'pendente',sesmtMotivo:'',sesmtPor:null};
+    const data={refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:arq.name,arquivoPath,arquivoData:'',
+      emitidoEm:(de.exigeData===false)?'':hoje(), validade: de.validadeDias?plusDays(de.validadeDias):null,
+      iaStatus:'pendente', iaNota: analisarIA?'🤖 Analisando documento…':'', sesmtStatus:'pendente',sesmtMotivo:'',sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
+    if(analisarIA) pendentes.push({docId, de, arq});
     ok++;
   }
-  save(); closeModal(); toast(ok+' arquivo(s) enviado(s)'+(ign?', '+ign+' ignorado(s)':''), ok?'':'warn'); go(currentPage);
+  save(); closeModal(); go(currentPage);
+  toast(ok+' arquivo(s) enviado(s)'+(ign?', '+ign+' ignorado(s)':'')+(analisarIA&&pendentes.length?' — IA analisando…':''), ok?'':'warn');
+  // 2) IA em 2º plano, um por vez (com folga p/ não estourar limite)
+  if(analisarIA && pendentes.length){
+    const ctx = contextoRef(tipo, refId, obraId);
+    (async()=>{
+      for(let j=0;j<pendentes.length;j++){
+        const p=pendentes[j];
+        if(j>0) await new Promise(r=>setTimeout(r,700));
+        const r = await analisarComGemini(p.arq, p.de, ctx);
+        const d = getDoc(tipo,refId,p.docId,obraId); if(!d) continue;
+        d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
+        if(p.de.exigeData!==false){ if(r.emissao) d.emitidoEm=r.emissao; if(p.de.validadeDias&&r.validade) d.validade=r.validade; }
+        save(); if(currentPage) go(currentPage);
+      }
+      toast('IA concluiu a análise dos arquivos.');
+    })();
+  }
   return true;
 }
 async function excluirDoc(docId){
