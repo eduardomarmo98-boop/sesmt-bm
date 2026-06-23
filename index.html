@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.22.3">
+<meta name="app-version" content="2026.06.22.4">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -288,7 +288,7 @@
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Entrar</button>
     <div style="text-align:center;margin-top:12px"><a href="#" onclick="esqueciSenha();return false" style="color:var(--bm-blue);font-size:13px;text-decoration:underline;cursor:pointer">Esqueci minha senha</a></div>
-    <div class="login-foot">© 2026 Brandão &amp; Marmo · Todos os direitos reservados</div>
+    <div class="login-foot">© 2026 Brandão &amp; Marmo · Todos os direitos reservados · <span id="loginVer"></span></div>
   </div>
 </div>
 
@@ -312,7 +312,7 @@
   </div>
   <div class="footer" id="footer">
     <div id="footerLogo"></div>
-    <div>SESMT • Controle de Documentação • <span id="footerYear"></span></div>
+    <div>SESMT • Controle de Documentação • <span id="footerYear"></span> • <b>v<span id="footerVer"></span></b></div>
   </div>
 </div>
 
@@ -984,15 +984,18 @@ function situacaoColaborador(func){
 function renderPortaria(){
   loadFromSupabase().catch(()=>{}); // dados frescos p/ leitura do QR (evita "QR invalido" por cache no aparelho)
   const obras = escopoObras().filter(o=>o.ativa);
-  if(_portaria.obraId==null) _portaria.obraId = (obras[0] && obras[0].id) || null;
+  // vigia (e quem só tem 1 obra) não escolhe obra — fica travada na obra do login
+  const travado = session.tipo==='vigia' || obras.length<=1;
+  if(travado || _portaria.obraId==null) _portaria.obraId = (obras[0] && obras[0].id) || null;
+  const obraAtual = obras.find(o=>o.id===_portaria.obraId) || obras[0];
+  const obraBloco = travado
+    ? '<div class="form-group"><label>Obra</label><div style="padding:10px 12px;background:#eef2f9;border-radius:8px;font-weight:700;color:var(--bm-blue)">'+escapeHtml(obraAtual?obraAtual.nome:'— sem obra vinculada —')+'</div></div>'
+    : '<div class="form-group"><label>Obra</label><select id="portObra" onchange="_portaria.obraId=parseInt(this.value)||null">'+obras.map(o=>'<option value="'+o.id+'" '+(_portaria.obraId===o.id?'selected':'')+'>'+escapeHtml(o.nome)+'</option>').join('')+'</select></div>';
   document.getElementById('main').innerHTML =
     '<div class="page-header"><div><div class="page-title">Portaria - Controle de Acesso</div>'+
     '<div class="page-sub">Aponte a camera para o QR Code. Entrada e saida sao automaticas.</div></div></div>'+
     '<div class="card" style="max-width:560px;margin:0 auto">'+
-      '<div class="form-group"><label>Obra</label>'+
-        '<select id="portObra" onchange="_portaria.obraId=parseInt(this.value)||null">'+
-        obras.map(o=>'<option value="'+o.id+'" '+(_portaria.obraId===o.id?'selected':'')+'>'+escapeHtml(o.nome)+'</option>').join('')+
-        '</select></div>'+
+      obraBloco+
       '<div style="position:relative;width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:300px">'+
         '<div id="leitor" style="width:100%;min-height:300px"></div>'+
         '<div id="scanOverlay" style="display:none;position:absolute;inset:0;z-index:50;overflow-y:auto;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;color:#fff;font-family:Arial,Helvetica,sans-serif"></div>'+
@@ -2340,6 +2343,7 @@ function renderDocsList(tipo, ref){
       if(exigidos.length===0) return `<div style="margin-bottom:18px"><h4 style="color:var(--bm-blue);padding:8px 12px;background:#eef2f9;border-radius:6px">🏗️ ${obra.nome}</h4><div class="empty" style="padding:14px;font-size:13px">Nenhum doc de empresa exigido nesta obra.</div></div>`;
       return `<div style="margin-bottom:22px">
         <h4 style="color:var(--bm-blue);padding:8px 12px;background:#eef2f9;border-radius:6px;margin-bottom:8px">🏗️ ${obra.nome}</h4>
+        ${pode('enviar_doc')?`<div style="margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="uploadEmMassa('empresa',${ref.id},${oid})">📎 Enviar vários arquivos de uma vez</button> <span style="font-size:11px;color:var(--muted)">identifica pelo nome do arquivo</span></div>`:''}
         ${exigidos.map(de=>renderDocRow(tipo, ref, de, oid)).join('')}
       </div>`;
     }).join('');
@@ -2516,7 +2520,11 @@ function _matchDoc(fileName, exigidos){
   });
   return bestScore>=3 ? best : null;
 }
-function contextoRef(tipo, refId){
+function contextoRef(tipo, refId, obraId){
+  if(tipo==='empresa'){
+    const e=DB.empresas.find(x=>x.id===refId); const obra=obraId?DB.obras.find(o=>o.id===obraId):null;
+    return `• EMPRESA: ${e?.razao}\n• CNPJ: ${e?.cnpj}\n• RESPONSÁVEL: ${e?.responsavel||'-'}${obra?`\n• OBRA: ${obra.nome}`:''}`;
+  }
   if(tipo==='funcionario'){
     const f=DB.funcionarios.find(x=>x.id===refId); const funcao=DB.catalogoFuncoes.find(c=>c.id===f?.funcaoId);
     const obra=DB.obras.find(o=>o.id===f?.obraId); const emp=DB.empresas.find(e=>e.id===f?.empresaId);
@@ -2525,12 +2533,21 @@ function contextoRef(tipo, refId){
   const m=DB.maquinas.find(x=>x.id===refId); const emp=DB.empresas.find(e=>e.id===m?.empresaId); const obra=DB.obras.find(o=>o.id===m?.obraId);
   return `• MÁQUINA: ${m?.descricao}\n• PATRIMÔNIO/SÉRIE: ${m?.patrimonio||'-'}\n• EMPRESA: ${emp?.razao||''}\n• OBRA: ${obra?.nome||''}`;
 }
-function uploadEmMassa(tipo, refId){
-  const ref = tipo==='funcionario'?DB.funcionarios.find(x=>x.id===refId):DB.maquinas.find(x=>x.id===refId);
+function uploadEmMassa(tipo, refId, obraId){
+  obraId = obraId||null;
+  let ref, exigidos;
+  if(tipo==='empresa'){
+    ref = DB.empresas.find(x=>x.id===refId);
+    const obra = DB.obras.find(o=>o.id===obraId);
+    exigidos = (obra?.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+  } else if(tipo==='funcionario'){
+    ref = DB.funcionarios.find(x=>x.id===refId); exigidos = docsExigidosFuncionario(ref);
+  } else {
+    ref = DB.maquinas.find(x=>x.id===refId); exigidos = docsExigidosMaquina(ref);
+  }
   if(!ref) return;
-  const exigidos = tipo==='funcionario'?docsExigidosFuncionario(ref):docsExigidosMaquina(ref);
   if(!exigidos.length){ toast('Nenhum documento exigido','warn'); return; }
-  _massaCtx = {tipo, refId, exigidos};
+  _massaCtx = {tipo, refId, obraId, exigidos};
   showModal('Enviar vários arquivos', `
     <div class="alert info" style="font-size:12px">Selecione vários PDFs/imagens. O sistema tenta identificar cada documento pelo <b>nome do arquivo</b>. Confira a coluna "Documento" e ajuste o que precisar antes de salvar.</div>
     <div class="form-group"><input id="f_massa" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/jpg" onchange="montarMapaMassa()"></div>
@@ -2555,9 +2572,9 @@ function montarMapaMassa(){
 async function salvarMassa(){
   const inp=document.getElementById('f_massa'); const files=[...(inp?.files||[])];
   if(!files.length){ toast('Selecione os arquivos','err'); return false; }
-  const {tipo, refId, exigidos} = _massaCtx;
+  const {tipo, refId, obraId, exigidos} = _massaCtx;
   const prog=document.getElementById('massaProg'); if(prog) prog.style.display='block';
-  const ctx = contextoRef(tipo, refId);
+  const ctx = contextoRef(tipo, refId, obraId);
   let ok=0, ign=0;
   for(let i=0;i<files.length;i++){
     const docId = document.getElementById('m_doc_'+i)?.value;
@@ -2573,8 +2590,8 @@ async function salvarMassa(){
     if(DB.config.iaHabilitada){ ia = DB.config.geminiApiKey ? await analisarComGemini(arq, de, ctx) : simularIA(); }
     const validade = de.validadeDias ? (ia.validade || plusDays(de.validadeDias)) : null;
     const emitido = (de.exigeData===false) ? '' : (ia.emissao || hoje());
-    const existing=getDoc(tipo,refId,docId,null);
-    const data={refTipo:tipo,refId,docId,obraId:null,arquivo:arq.name,arquivoPath,arquivoData:'',emitidoEm:emitido,validade,iaStatus:ia.iaStatus,iaNota:ia.iaNota,sesmtStatus:'pendente',sesmtMotivo:'',sesmtPor:null};
+    const existing=getDoc(tipo,refId,docId,obraId);
+    const data={refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:arq.name,arquivoPath,arquivoData:'',emitidoEm:emitido,validade,iaStatus:ia.iaStatus,iaNota:ia.iaNota,sesmtStatus:'pendente',sesmtMotivo:'',sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
     ok++;
   }
@@ -3638,6 +3655,7 @@ async function notificarWhatsApp(evento, dados){
 
 /* ===== AUTO-UPDATE (substitui o Ctrl+Shift+R) ===== */
 const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content || '?';
+try{ const _fv=document.getElementById('footerVer'); if(_fv)_fv.textContent=APP_VERSION; const _lv=document.getElementById('loginVer'); if(_lv)_lv.textContent='v'+APP_VERSION; }catch(e){}
 let _versaoNova = null;
 
 async function checarAtualizacao(){
