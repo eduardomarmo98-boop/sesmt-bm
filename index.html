@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.23.1">
+<meta name="app-version" content="2026.06.23.3">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -352,6 +352,12 @@ const ROLES = {
 let DB = null;
 let session = null;
 let currentPage = 'dashboard';
+let _rtChannel = null;      // canal Supabase Realtime (atualizacao automatica)
+let _docsModalRef = null;   // ref aberto no modal "Documentos: ..."
+let _ultAtividade = Date.now();        // logout por inatividade
+const INATIVIDADE_MS = 30*60*1000;     // 30 min sem uso -> sai sozinho
+const ROLES_ALTA_PRIV = ['diretoria','ti','sesmt','coord_sesmt']; // criam/gerem usuarios -> 2FA mais curto
+function _janela2faMs(tipo){ return ROLES_ALTA_PRIV.includes(tipo) ? 12*3600000 : 86400000; } // 12h vs 24h
 let filtros = {obraId:'',empresaId:'',status:'',busca:''};
 
 /* ===== STORAGE ===== */
@@ -615,6 +621,8 @@ async function doLogin(){
 }
 async function entrarNaApp(){
   await loadFromSupabase();
+  iniciarRealtime();
+  _ultAtividade = Date.now();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
   // logo / nome no topbar
@@ -652,7 +660,7 @@ async function restaurarSessao(){
     const perfilTmp = {id:perfil.id, email:perfil.email, nome:perfil.nome, tipo:perfil.tipo, empresaId:perfil.empresa_id, obraIds:perfil.obra_ids||[], naoApagar:perfil.nao_apagar};
     if(TIPOS_MFA_OBRIGATORIO.includes(perfilTmp.tipo)){
       const t = Number(localStorage.getItem('sesmt_last2fa')||0);
-      if(!t || (Date.now()-t) > 86400000) return false;
+      if(!t || (Date.now()-t) > _janela2faMs(perfilTmp.tipo)) return false;
     }
     session = perfilTmp;
     await entrarNaApp();
@@ -660,6 +668,7 @@ async function restaurarSessao(){
   }catch(e){ return false; }
 }
 async function logout(){
+  pararRealtime();
   await sb.auth.signOut();
   session=null;
   document.getElementById('loginScreen').style.display='flex';
@@ -670,17 +679,63 @@ function _mfaExpirado(){
   if(!session) return false;
   if(!TIPOS_MFA_OBRIGATORIO.includes(session.tipo)) return false;
   var t = Number(localStorage.getItem('sesmt_last2fa')||0);
-  return (Date.now() - t) > 86400000;
+  return (Date.now() - t) > _janela2faMs(session.tipo);
 }
 function checarMfaDiario(){
   if(_mfaExpirado()){
-    toast('Por seguranca, faca login de novo (verificacao a cada 24h).','warn');
+    toast('Por seguranca, faca login de novo.','warn');
     setTimeout(function(){ try{ logout(); }catch(e){} }, 1800);
+    return;
+  }
+  if(session && (Date.now() - _ultAtividade) > INATIVIDADE_MS){
+    toast('Sessao encerrada por inatividade. Faca login de novo.','warn');
+    setTimeout(function(){ try{ logout(); }catch(e){} }, 1500);
   }
 }
 setInterval(checarMfaDiario, 60000);
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') checarMfaDiario(); });
+['click','keydown','mousemove','touchstart','scroll'].forEach(function(ev){ document.addEventListener(ev, function(){ _ultAtividade = Date.now(); }, {passive:true}); });
 async function atualizarDados(){ try{ toast('Atualizando...'); await loadFromSupabase(); go(currentPage); toast('Dados atualizados'); }catch(e){ toast('Erro ao atualizar','err'); } }
+
+/* ===== ATUALIZACAO AUTOMATICA (Supabase Realtime) ===== */
+function _refDeDocsModal(){
+  const m=_docsModalRef; if(!m) return null;
+  if(m.tipo==='empresa') return DB.empresas.find(x=>x.id===m.refId);
+  if(m.tipo==='funcionario') return DB.funcionarios.find(x=>x.id===m.refId);
+  return DB.maquinas.find(x=>x.id===m.refId);
+}
+function _aplicarMudancaDoc(payload){
+  try{
+    const n=payload.new, o=payload.old;
+    if(payload.eventType==='DELETE'){ DB.documentos=DB.documentos.filter(d=>d.id!==(o&&o.id)); }
+    else if(n){
+      const doc={id:n.id,refTipo:n.ref_tipo,refId:n.ref_id,obraId:n.obra_id,docId:n.doc_id,arquivo:n.arquivo,arquivoPath:n.arquivo_path,arquivoData:'',emitidoEm:n.emitido_em,validade:n.validade,iaStatus:n.ia_status,iaNota:n.ia_nota,sesmtStatus:n.sesmt_status,sesmtMotivo:n.sesmt_motivo,sesmtPor:n.sesmt_por};
+      const i=DB.documentos.findIndex(d=>d.id===n.id);
+      if(i>=0) DB.documentos[i]=doc; else DB.documentos.push(doc);
+    }
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }catch(e){}
+    const modalAberto = document.getElementById('modal').classList.contains('show');
+    if(modalAberto && _docsModalRef){
+      // atualiza SÓ o modal "Documentos: ..." (não mexe em modais de edição/upload)
+      const titulo=(document.getElementById('modalTitle')||{}).textContent||'';
+      if(titulo.indexOf('Documentos:')===0){
+        const ref=_refDeDocsModal(); const b=document.getElementById('modalBody');
+        if(ref && b) b.innerHTML=renderDocsList(_docsModalRef.tipo, ref);
+      }
+    } else if(!modalAberto && currentPage && currentPage!=='config'){
+      go(currentPage); // atualiza a tela de fundo sozinho
+    }
+  }catch(e){ console.error('rtDoc',e); }
+}
+function iniciarRealtime(){
+  try{
+    if(_rtChannel) return;
+    _rtChannel = sb.channel('rt-docs')
+      .on('postgres_changes',{event:'*',schema:'public',table:'documentos'}, _aplicarMudancaDoc)
+      .subscribe();
+  }catch(e){ console.error('iniciarRealtime',e); }
+}
+function pararRealtime(){ try{ if(_rtChannel){ sb.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){} }
 
 /* ===== ESQUECI MINHA SENHA ===== */
 async function esqueciSenha(){
@@ -2367,6 +2422,7 @@ function editMaquina(id){
 
 /* ===== LISTA DE DOCS DE UMA REFERÊNCIA ===== */
 function verDocsRef(tipo, refId, nome){
+  _docsModalRef = {tipo:tipo, refId:refId, nome:nome};
   let ref;
   if(tipo==='empresa') ref = DB.empresas.find(x=>x.id===refId);
   else if(tipo==='funcionario') ref = DB.funcionarios.find(x=>x.id===refId);
@@ -3729,7 +3785,7 @@ async function modalSave(){
     btns.forEach(b=>b.disabled=false);
   }
 }
-function closeModal(){ document.getElementById('modal').classList.remove('show'); modalSaveFn=null; }
+function closeModal(){ document.getElementById('modal').classList.remove('show'); modalSaveFn=null; _docsModalRef=null; }
 function toast(msg,type){const t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
 
 /* ===== WHATSAPP (fire-and-forget via Edge Function) ===== */
