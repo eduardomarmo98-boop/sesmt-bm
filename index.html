@@ -3704,4 +3704,519 @@ function renderConfig(){
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" onclick="salvarConfig()">💾 Salvar</button>
-      <button class="btn btn-danger" onclick="if(confirm('Zerar todos os dados?')){localStorage.removeItem(STORAGE_KEY);location
+      <button class="btn btn-danger" onclick="if(confirm('Zerar todos os dados?')){localStorage.removeItem(STORAGE_KEY);location.reload();}">⚠️ Resetar Sistema</button>
+    </div>
+  `;
+}
+function salvarConfig(){
+  DB.config.smtp={host:val('cf_host'),porta:parseInt(val('cf_porta'))||587,usuario:val('cf_user'),senha:val('cf_pass'),remetente:val('cf_from')};
+  DB.config.diasAvisoVencimento=parseInt(val('cf_dias'))||30;
+  DB.config.iaHabilitada=document.getElementById('cf_ia').checked;
+  DB.config.geminiApiKey=val('cf_gem');
+  DB.config.geminiApiKey2=val('cf_gem2');
+  DB.config.geminiApiKey3=val('cf_gem3');
+  DB.config.geminiModel=val('cf_gemmod')||'gemini-2.5-flash-lite';
+  DB.config.nomeEmpresa=val('cf_nome')||'BRANDÃO & MARMO';
+  DB.config.corPrimaria=val('cf_cor1')||'#1a3d7c';
+  DB.config.corSecundaria=val('cf_cor2')||'#F88800';
+  DB.config.webhookMake=val('cf_webhook');
+  // logo (lê do preview)
+  const prev = document.getElementById('logoPrev');
+  if(prev && prev.src && prev.src.startsWith('data:')) DB.config.logoData = prev.src;
+  aplicarTema();
+  save(); toast('Configurações salvas'); go('config');
+}
+
+function previewLogo(input){
+  const f = input.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    const img = document.getElementById('logoPrev');
+    img.src = r.result; img.style.display='block'; img.style.maxHeight='60px';
+    img.style.marginTop='10px'; img.style.padding='6px'; img.style.border='1px solid var(--border)'; img.style.borderRadius='6px';
+  };
+  r.readAsDataURL(f);
+}
+
+function aplicarTema(){
+  document.documentElement.style.setProperty('--bm-blue', DB.config.corPrimaria||'#1a3d7c');
+  var _bmOrange = DB.config.corSecundaria;
+  if(!_bmOrange || _bmOrange.toLowerCase()==='#e8a23a') _bmOrange = '#F88800';
+  document.documentElement.style.setProperty('--bm-orange', _bmOrange);
+}
+
+async function testarWebhook(){
+  const url = val('cf_webhook');
+  const el = document.getElementById('webhookRes');
+  if(!url){ el.innerHTML='<span style="color:var(--crit)">Cole a URL primeiro</span>'; return; }
+  el.innerHTML='⏳ Testando...';
+  try{
+    const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      teste:true, to:'teste@exemplo.com', subject:'Teste do SESMT B&M', html:'<p>Mensagem de teste</p>'
+    })});
+    if(res.ok) el.innerHTML='<span style="color:var(--ok)">✓ Webhook respondeu OK</span>';
+    else el.innerHTML=`<span style="color:var(--crit)">❌ Status ${res.status}</span>`;
+  }catch(e){ el.innerHTML=`<span style="color:var(--crit)">❌ ${e.message}</span>`; }
+}
+
+async function enviarWebhook(payload){
+  if(!DB.config.webhookMake) return false;
+  try{
+    await fetch(DB.config.webhookMake,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    return true;
+  }catch(e){ console.error('webhook',e); return false; }
+}
+
+async function testarGemini(){
+  const key = val('cf_gem');
+  const model = val('cf_gemmod')||'gemini-2.5-flash-lite';
+  const el = document.getElementById('testRes');
+  if(!key){ el.innerHTML = '<span style="color:var(--crit)">Cole a chave primeiro</span>'; return; }
+  el.innerHTML = '⏳ Testando...';
+  try{
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({contents:[{parts:[{text:'Responda apenas "OK" se você está funcionando.'}]}]})
+    });
+    if(!res.ok){
+      const err = await res.text();
+      el.innerHTML = `<span style="color:var(--crit)">❌ Erro ${res.status}: ${err.slice(0,120)}</span>`;
+      return;
+    }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '(sem resposta)';
+    el.innerHTML = `<span style="color:var(--ok)">✓ Conectado! Modelo respondeu: "${text.trim().slice(0,50)}"</span>`;
+  } catch(e){
+    el.innerHTML = `<span style="color:var(--crit)">❌ ${e.message}</span>`;
+  }
+}
+
+/* ===== DOWNLOAD INDIVIDUAL E EM MASSA ===== */
+async function analisarDocBg(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(!d || !d.arquivoPath){ toast('Sem arquivo para analisar','warn'); return; }
+  if(DB.config.iaHabilitada===false){ toast('Análise por IA desativada','warn'); return; }
+  d.iaStatus='pendente'; d.iaNota='🤖 Analisando em segundo plano…'; save(); go(currentPage);
+  toast('IA analisando em 2º plano…');
+  try{
+    const {data:blob, error} = await sb.storage.from('documentos').download(d.arquivoPath);
+    if(error || !blob) throw new Error('download');
+    const de = DB.catalogoDocs.find(c=>c.id===d.docId) || {nome:d.docId, exigeData:true};
+    const ctx = contextoRef(d.refTipo, d.refId, d.obraId);
+    const r = await analisarComGemini(blob, de, ctx);
+    const cur = DB.documentos.find(x=>x.id===docId); if(!cur) return;
+    cur.iaStatus=r.iaStatus; cur.iaNota=r.iaNota;
+    if(de.exigeData!==false){ if(r.emissao) cur.emitidoEm=r.emissao; if(de.validadeDias&&r.validade) cur.validade=r.validade; }
+    save(); if(currentPage) go(currentPage);
+    toast('IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
+  }catch(e){ const cur=DB.documentos.find(x=>x.id===docId); if(cur){ cur.iaNota='Falha ao analisar. Tente de novo.'; save(); go(currentPage); } toast('Falha na análise da IA','err'); }
+}
+async function abrirDoc(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(!d || !d.arquivoPath){ toast('Este documento não tem arquivo para abrir','warn'); return; }
+  const {data, error} = await sb.storage.from('documentos').createSignedUrl(d.arquivoPath, 3600);
+  if(error || !data){ toast('Erro ao abrir: '+((error&&error.message)||'tente novamente'),'err'); return; }
+  window.open(data.signedUrl, '_blank');
+}
+async function baixarDoc(docId){
+  const d = DB.documentos.find(x=>x.id===docId);
+  if(!d||!d.arquivoPath){ toast('Arquivo não disponível','err'); return; }
+  const {data, error} = await sb.storage.from('documentos').createSignedUrl(d.arquivoPath, 3600);
+  if(error){ toast('Erro ao gerar link: '+error.message,'err'); return; }
+  const a = document.createElement('a');
+  a.href = data.signedUrl;
+  a.download = d.arquivo||'documento.pdf';
+  a.target = '_blank';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function safeName(s){ return (s||'').replace(/[\\\/:*?"<>|]/g,'_').replace(/\s+/g,'_').slice(0,80); }
+
+async function baixarZip(docs, nomeZip){
+  if(typeof JSZip==='undefined'){ toast('JSZip não carregou','err'); return; }
+  if(!docs.length){ toast('Nenhum arquivo para baixar','warn'); return; }
+  const validos = docs.filter(d=>d.arquivoPath);
+  if(validos.length===0){ toast('Nenhum arquivo no Storage','warn'); return; }
+  toast(`Baixando ${validos.length} arquivo(s)...`);
+  const zip = new JSZip();
+  let count = 0;
+  for(const d of validos){
+    const exigido = DB.catalogoDocs.find(x=>x.id===d.docId);
+    let pasta = '';
+    if(d.refTipo==='empresa'){
+      const e = DB.empresas.find(x=>x.id===d.refId);
+      const o = d.obraId?DB.obras.find(x=>x.id===d.obraId):null;
+      pasta = `EMPRESAS/${safeName(e?.razao||'?')}${o?'/'+safeName(o.nome):''}`;
+    } else if(d.refTipo==='funcionario'){
+      const f = DB.funcionarios.find(x=>x.id===d.refId);
+      const emp = DB.empresas.find(x=>x.id===f?.empresaId);
+      pasta = `COLABORADORES/${safeName(emp?.razao||'?')}/${safeName(f?.nome||'?')}`;
+    } else {
+      const m = DB.maquinas.find(x=>x.id===d.refId);
+      const emp = DB.empresas.find(x=>x.id===m?.empresaId);
+      pasta = `MAQUINAS/${safeName(emp?.razao||'?')}/${safeName(m?.descricao||'?')}`;
+    }
+    const fileName = `${safeName(exigido?.nome||d.docId)}_${d.arquivo||'doc.pdf'}`;
+    const {data:blob, error} = await sb.storage.from('documentos').download(d.arquivoPath);
+    if(error||!blob){ console.error('download',d.arquivoPath,error); continue; }
+    zip.file(`${pasta}/${fileName}`, blob);
+    count++;
+  }
+  if(count===0){ toast('Falha ao baixar arquivos','err'); return; }
+  toast(`Compactando ${count} arquivo(s)...`);
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (nomeZip||'documentos_sesmt')+'.zip';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+
+function renderDownloads(){
+  let docs = DB.documentos.filter(d=>d.arquivoPath);
+  // aplicar escopo
+  if(session.tipo==='empresa') docs = docs.filter(d=>{
+    if(d.refTipo==='empresa') return d.refId===session.empresaId;
+    if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.empresaId===session.empresaId; }
+    if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.empresaId===session.empresaId; }
+  });
+  if(['coordenador','engenheiro','tst','cliente'].includes(session.tipo)){
+    docs = docs.filter(d=>{
+      if(d.refTipo==='empresa') return true;
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return session.obraIds.includes(f?.obraId); }
+      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return session.obraIds.includes(m?.obraId); }
+    });
+  }
+  // filtros UI
+  if(filtros.obraId){
+    const oid=parseInt(filtros.obraId);
+    docs = docs.filter(d=>{
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.obraId===oid; }
+      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.obraId===oid; }
+      if(d.refTipo==='empresa') return (d.obraId||null)===oid;
+    });
+  }
+  if(filtros.empresaId){
+    const eid=parseInt(filtros.empresaId);
+    docs = docs.filter(d=>{
+      if(d.refTipo==='empresa') return d.refId===eid;
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.empresaId===eid; }
+      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.empresaId===eid; }
+    });
+  }
+  if(filtros.status==='ok') docs = docs.filter(d=>d.sesmtStatus==='aprovado');
+  else if(filtros.status==='pendente') docs = docs.filter(d=>d.sesmtStatus==='pendente');
+  else if(filtros.status==='crit') docs = docs.filter(d=>d.sesmtStatus==='recusado');
+
+  if(filtros.busca){
+    const q = filtros.busca.toLowerCase();
+    docs = docs.filter(d=>{
+      const cat = DB.catalogoDocs.find(c=>c.id===d.docId);
+      let nome = '';
+      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); nome=f?.nome||''; }
+      else if(d.refTipo==='empresa'){ const e=DB.empresas.find(x=>x.id===d.refId); nome=e?.razao||''; }
+      else if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); nome=m?.descricao||''; }
+      return (nome+' '+(cat?.nome||'')+' '+(d.arquivo||'')).toLowerCase().includes(q);
+    });
+  }
+
+  const nomeZip = filtros.obraId ? `obra_${safeName(DB.obras.find(o=>o.id==filtros.obraId)?.nome||'')}_docs`
+                : filtros.empresaId ? `empresa_${safeName(DB.empresas.find(e=>e.id==filtros.empresaId)?.razao||'')}_docs`
+                : 'documentos_sesmt';
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">Downloads</div><div class="page-sub">Baixe documentos individualmente ou em massa (ZIP)</div></div>
+      <button class="btn btn-primary" onclick='baixarZip(${JSON.stringify(docs.map(d=>d.id))}.map(id=>DB.documentos.find(x=>x.id===id)), "${nomeZip}")'>📦 Baixar ${docs.length} em ZIP</button>
+    </div>
+    ${toolbarFiltros({busca:true,obra:true,empresa:true,status:true})}
+    <div class="card">
+      <table>
+        <thead><tr><th>Tipo</th><th>Vínculo</th><th>Documento</th><th>Arquivo</th><th>Emissão</th><th>Validade</th><th>Status</th><th></th></tr></thead>
+        <tbody>${docs.map(d=>{
+          const exigido = DB.catalogoDocs.find(c=>c.id===d.docId);
+          let vinc = '';
+          if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); const e=DB.empresas.find(x=>x.id===f?.empresaId); vinc = `👷 ${f?.nome||'?'} (${e?.razao||'?'})`; }
+          else if(d.refTipo==='empresa'){ const e=DB.empresas.find(x=>x.id===d.refId); vinc = `🏢 ${e?.razao||'?'}`; }
+          else { const m=DB.maquinas.find(x=>x.id===d.refId); const e=DB.empresas.find(x=>x.id===m?.empresaId); vinc = `🚜 ${m?.descricao||'?'} (${e?.razao||'?'})`; }
+          return `<tr>
+            <td>${d.refTipo==='empresa'?'Empresa':d.refTipo==='funcionario'?'Colab.':'Máquina'}</td>
+            <td>${vinc}</td>
+            <td>${exigido?.nome||d.docId}</td>
+            <td style="font-size:12px">${d.arquivo||'-'}</td>
+            <td>${d.emitidoEm||'-'}</td>
+            <td>${d.validade||'-'}</td>
+            <td><span class="badge-ia ${d.sesmtStatus==='aprovado'?'aprovado':d.sesmtStatus==='recusado'?'recusado':'pendente'}">${d.sesmtStatus||'-'}</span></td>
+            <td><button class="btn btn-secondary btn-sm" onclick="baixarDoc(${d.id})">⬇️</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      ${docs.length===0?'<div class="empty"><div class="empty-icon">📂</div>Nenhum arquivo para baixar com esses filtros</div>':''}
+    </div>
+  `;
+}
+
+/* ===== DEVOLUTIVA - MATRIZ POR OBRA ===== */
+function renderDevolutiva(){
+  const obras = escopoObras();
+  if(!filtros.obraId){
+    const _termo = (filtros._buscaObra||'').toLowerCase();
+    const _lista = obras.filter(o=>!_termo || (o.nome||'').toLowerCase().includes(_termo) || (o.clienteNome||'').toLowerCase().includes(_termo) || (o.endereco||'').toLowerCase().includes(_termo));
+    document.getElementById('main').innerHTML = `
+      <div class="page-header">
+        <div><div class="page-title">Devolutiva ao Cliente</div><div class="page-sub">Matriz de conformidade por obra, pronta para enviar</div></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:10px">Selecione a obra:</h3>
+        <input id="buscaObraDev" placeholder="🔎 Buscar por obra ou cliente..." value="${escapeHtml(filtros._buscaObra||'')}" oninput="filtros._buscaObra=this.value;clearTimeout(window._bod);window._bod=setTimeout(function(){go('devolutiva');},250)" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
+          ${_lista.length===0?'<div class="empty">Nenhuma obra encontrada</div>':_lista.map(o=>`
+            <button class="btn btn-secondary" style="padding:14px;text-align:left;display:block;width:100%;height:auto;white-space:normal;word-break:break-word" onclick="filtros.obraId='${o.id}';go('devolutiva')">
+              <div style="font-weight:700;color:var(--bm-blue);font-size:15px;white-space:normal">${escapeHtml(o.nome)}${o.ativa===false?' <span style=&quot;font-size:10px;color:#dc2626;font-weight:400&quot;>(arquivada)</span>':''}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:normal;word-break:break-word">${escapeHtml(o.endereco||'')}</div>
+              <div style="font-size:12px;color:var(--muted);white-space:normal">Cliente: ${escapeHtml(o.clienteNome||'-')}</div>
+            </button>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const obra = DB.obras.find(o=>o.id==filtros.obraId);
+  if(!obra){ filtros.obraId=''; go('devolutiva'); return; }
+  // empresas que atuam na obra
+  const empresasObra = [...new Set([
+    ...DB.funcionarios.filter(f=>f.obraId===obra.id).map(f=>f.empresaId),
+    ...DB.maquinas.filter(m=>m.obraId===obra.id).map(m=>m.empresaId)
+  ])].map(eid=>DB.empresas.find(e=>e.id===eid)).filter(Boolean);
+
+  // colunas empresa (docs da obra para empresa)
+  const colsEmpresa = (obra.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+
+  // colunas colaborador: união docsFuncionarioBase + todos docs de todas funções dos colab da obra
+  const colabsObra = DB.funcionarios.filter(f=>f.obraId===obra.id);
+  const docsColabSet = new Set(obra.docsFuncionarioBase||[]);
+  colabsObra.forEach(f=>{
+    const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
+    (funcao?.docsIds||[]).forEach(d=>docsColabSet.add(d));
+  });
+  const colsColab = [...docsColabSet].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+
+  function statusCell(doc, exigencia){
+    const s = statusDoc(doc, exigencia);
+    if(s.cls==='ok') return {txt:'OK', bg:'#16a34a', fg:'#fff'};
+    if(s.cls==='pendente'||s.cls==='warn'||s.cls==='crit'||s.cls==='info') return {txt:'PENDENTE', bg:'#dc2626', fg:'#fff'};
+    return {txt:'-', bg:'#9ca3af', fg:'#fff'};
+  }
+
+  // status final
+  let temPendencia = false;
+  empresasObra.forEach(e=>colsEmpresa.forEach(de=>{ const d=getDoc('empresa',e.id,de.id,obra.id); if(!d||statusDoc(d,de).cls!=='ok') temPendencia=true; }));
+  colabsObra.forEach(f=>{
+    const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
+    colsColab.forEach(de=>{
+      if(!exigidos.has(de.id)) return;
+      const doc = getDoc('funcionario',f.id,de.id);
+      if(!doc||statusDoc(doc,de).cls!=='ok') temPendencia=true;
+    });
+  });
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Devolutiva: ${obra.nome}</div>
+        <div class="page-sub">Cliente: ${obra.clienteNome||'-'} • ${empresasObra.length} empresa(s) • ${colabsObra.length} colaborador(es)</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="filtros.obraId='';go('devolutiva')">← Trocar obra</button>
+        <button class="btn btn-secondary" onclick="window.print()">🖨️ Imprimir</button>
+        <button class="btn btn-secondary" onclick="exportarDevolutivaCSV()">⬇️ CSV</button>
+        <button class="btn btn-primary" onclick="enviarDevolutiva(${obra.id})">✉️ Enviar ao cliente</button>
+      </div>
+    </div>
+
+    <div id="devolutivaEl" style="background:#fff;padding:24px;border-radius:8px;box-shadow:var(--shadow);overflow-x:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:2px solid var(--bm-blue);padding-bottom:10px">
+        <div>
+          <div style="font-size:22px;font-weight:700;color:var(--bm-blue)">BRANDÃO<span style="color:var(--bm-orange)">&MARMO</span></div>
+          <div style="font-size:11px;color:var(--muted);letter-spacing:2px">ENGENHARIA E CONSTRUÇÕES</div>
+        </div>
+        <div style="text-align:center;flex:1">
+          <h2 style="margin:0;font-size:18px">DEVOLUTIVA DOCUMENTAÇÃO — ${obra.nome.toUpperCase()}</h2>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">Emitido em ${new Date().toLocaleDateString('pt-BR')}</div>
+        </div>
+        <div style="background:var(--ok);color:#fff;padding:8px 16px;border-radius:50%;font-weight:700;font-size:11px;text-align:center;line-height:1.2">SEGURANÇA<br>DO TRABALHO</div>
+      </div>
+
+      ${empresasObra.length===0?'<div class="empty">Nenhuma empresa atuando nesta obra</div>':`
+        <h3 style="margin:14px 0 8px;color:var(--bm-blue);font-size:14px">EMPRESA</h3>
+        <table style="font-size:11px">
+          <thead><tr><th style="background:var(--bm-blue);color:#fff">Empresa</th>${colsEmpresa.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
+          <tbody>${empresasObra.map(e=>`<tr>
+            <td><b>${e.razao}</b></td>
+            ${colsEmpresa.map(de=>{ const c=statusCell(getDoc('empresa',e.id,de.id,obra.id),de); return `<td style="background:${c.bg};color:${c.fg};text-align:center;font-weight:700">${c.txt}</td>`; }).join('')}
+          </tr>`).join('')}</tbody>
+        </table>
+      `}
+
+      ${colabsObra.length===0?'':`
+        <h3 style="margin:20px 0 8px;color:var(--bm-blue);font-size:14px">COLABORADORES</h3>
+        <table style="font-size:11px">
+          <thead><tr><th style="background:var(--bm-blue);color:#fff">Colaborador</th>${colsColab.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
+          <tbody>${colabsObra.map(f=>{
+            const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
+            const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
+            return `<tr>
+              <td><b>${f.nome}</b><div style="font-size:10px;color:var(--muted)">${funcao?.nome||''}</div></td>
+              ${colsColab.map(de=>{
+                if(!exigidos.has(de.id)) return '<td style="background:#9ca3af;color:#fff;text-align:center;font-weight:700">N/A</td>';
+                const c = statusCell(getDoc('funcionario',f.id,de.id),de);
+                return `<td style="background:${c.bg};color:${c.fg};text-align:center;font-weight:700">${c.txt}</td>`;
+              }).join('')}
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      `}
+
+      <div style="margin-top:24px;padding:12px;background:${temPendencia?'#fee2e2':'#dcfce7'};border-radius:6px;text-align:center;font-weight:700;font-size:16px;color:${temPendencia?'#991b1b':'#166534'}">
+        STATUS FINAL: ${temPendencia?'PENDENTE':'OK - CONFORME'}
+      </div>
+    </div>
+  `;
+}
+
+function exportarDevolutivaCSV(){
+  const rows = [];
+  document.querySelectorAll('#devolutivaEl table').forEach((tbl,ti)=>{
+    rows.push([ti===0?'EMPRESA':'COLABORADORES']);
+    [...tbl.querySelectorAll('tr')].forEach(tr=>rows.push([...tr.children].map(td=>td.innerText.replace(/\n/g,' ').trim())));
+    rows.push([]);
+  });
+  const csv = rows.map(r=>r.map(c=>`"${(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='devolutiva.csv'; a.click();
+}
+
+function enviarDevolutiva(obraId){
+  const obra = DB.obras.find(o=>o.id===obraId);
+  const dest = destinatariosObra(obraId);
+  const para = prompt('E-mail principal do cliente (Para):', '');
+  if(para===null) return;
+  const todos = [para,...dest.cc].filter(Boolean);
+  DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:todos.join('; '),assunto:`[B&M] Devolutiva Documentação - ${obra.nome}`,itens:1,enviadoPor:session.nome});
+  save();
+  toast(`Devolutiva enviada para ${todos.length} destinatário(s)`);
+}
+
+/* ===== UTILS ===== */
+function val(id){ const el=document.getElementById(id); return el?el.value.trim():''; }
+function atualizarDropLabel(input){
+  const lbl = document.getElementById('dropLabel');
+  if(lbl && input.files[0]) lbl.innerHTML = `<b style="color:var(--bm-blue)">✓ ${input.files[0].name}</b><br><span style="font-size:11px">${(input.files[0].size/1024).toFixed(0)} KB</span>`;
+}
+// drag-drop global
+document.addEventListener('dragover',e=>{
+  const dz = document.getElementById('dropZone');
+  if(!dz) return;
+  e.preventDefault(); dz.style.borderColor='var(--bm-blue)'; dz.style.background='#eef2f9';
+});
+document.addEventListener('dragleave',e=>{
+  const dz = document.getElementById('dropZone');
+  if(dz){ dz.style.borderColor='var(--border)'; dz.style.background='#f9fafb'; }
+});
+document.addEventListener('drop',e=>{
+  const dz = document.getElementById('dropZone');
+  if(!dz) return;
+  e.preventDefault();
+  dz.style.borderColor='var(--border)'; dz.style.background='#f9fafb';
+  const arq = document.getElementById('f_arq');
+  const f = e.dataTransfer?.files?.[0];
+  if(f && f.type==='application/pdf' && arq){
+    const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files;
+    atualizarDropLabel(arq);
+  } else if(f && /(pdf|image)/.test(f.type)){ const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files; atualizarDropLabel(arq);} else if(f) toast('Apenas PDF ou imagem aceito','err');
+});
+function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+let modalSaveFn=null, modalExtras=[];
+function showModal(title,body,saveFn,extras=[],readOnly=false,size=''){
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=body;
+  document.getElementById('modalEl').className='modal '+(size||'');
+  modalSaveFn=saveFn; modalExtras=extras;
+  let html=extras.map((b,i)=>`<button class="btn ${b.cls||'btn-secondary'}" onclick="modalExtra(${i})">${b.label}</button>`).join('');
+  html+=`<button class="btn btn-secondary" onclick="closeModal()">${readOnly?'Fechar':'Cancelar'}</button>`;
+  if(!readOnly && saveFn) html+=`<button class="btn btn-primary" onclick="modalSave()">Salvar</button>`;
+  document.getElementById('modalFooter').innerHTML=html;
+  document.getElementById('modal').classList.add('show');
+}
+function modalExtra(i){ modalExtras[i]?.fn(); }
+async function modalSave(){
+  if(!modalSaveFn) return;
+  const btns = document.querySelectorAll('#modalFooter .btn');
+  btns.forEach(b=>b.disabled=true);
+  try{
+    const result = await Promise.resolve(modalSaveFn());
+    if(result!==false) closeModal();
+  } finally {
+    btns.forEach(b=>b.disabled=false);
+  }
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); modalSaveFn=null; _docsModalRef=null; }
+function toast(msg,type){const t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
+
+/* ===== WHATSAPP (fire-and-forget via Edge Function) ===== */
+async function notificarWhatsApp(evento, dados){
+  try{
+    await sb.functions.invoke('notificar-whatsapp', {body:{evento, dados}});
+  }catch(e){ console.warn('whatsapp',e); }
+}
+
+/* ===== AUTO-UPDATE (substitui o Ctrl+Shift+R) ===== */
+const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content || '?';
+try{ const _fv=document.getElementById('footerVer'); if(_fv)_fv.textContent=APP_VERSION; const _lv=document.getElementById('loginVer'); if(_lv)_lv.textContent='v'+APP_VERSION; }catch(e){}
+let _versaoNova = null;
+
+async function checarAtualizacao(){
+  try{
+    const r = await fetch(window.location.pathname + '?cb=' + Date.now(), {cache:'no-store'});
+    if(!r.ok) return;
+    const html = await r.text();
+    const m = html.match(/<meta\s+name=["']app-version["']\s+content=["']([^"']+)["']/i);
+    if(!m) return;
+    const remota = m[1];
+    if(remota !== APP_VERSION){
+      _versaoNova = remota;
+      document.getElementById('updateBar').style.display = 'block';
+    }
+  }catch(e){}
+}
+
+function aplicarAtualizacao(){
+  if('caches' in window){
+    caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{});
+  }
+  window.location.href = window.location.pathname + '?v=' + (_versaoNova||Date.now());
+}
+
+setTimeout(checarAtualizacao, 3000);
+setInterval(checarAtualizacao, 5*60*1000);
+window.addEventListener('focus', checarAtualizacao);
+
+/* ===== INIT ===== */
+load();
+aplicarTema();
+restaurarSessao();
+(function setupLoginLogo(){
+  let branding = null;
+  try{ branding = JSON.parse(localStorage.getItem('bm_branding')||'null'); }catch(e){}
+  const lg = document.querySelector('#loginScreen .logo');
+  if(!lg) return;
+  if(branding && branding.logoData){
+    lg.innerHTML = `<img src="${branding.logoData}" style="max-height:90px;margin-bottom:10px" alt="${branding.nomeEmpresa||''}"><div style="font-size:18px;font-weight:700;color:var(--bm-blue);margin-top:6px">${branding.nomeEmpresa||''}</div><div style="font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:4px;font-weight:600;opacity:.7">ENGENHARIA E CONSTRUÇÕES</div>`;
+  } else if(branding && branding.nomeEmpresa && branding.nomeEmpresa!=='BRANDÃO & MARMO'){
+    const lgName = lg.querySelector('.logo-name');
+    if(lgName) lgName.textContent = branding.nomeEmpresa;
+  }
+})();
+</script>
+</body>
+</html>
