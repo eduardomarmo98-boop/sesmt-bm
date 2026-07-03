@@ -97,5 +97,6 @@ O HTML atual usa localStorage. Para usar Supabase como backend:
 
 Para customizações: contato com o time de desenvolvimento.
 
+
 ---
 Versão: 1.0 • Brandão & Marmo Engenharia
