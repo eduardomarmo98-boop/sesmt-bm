@@ -2,14 +2,14 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>SESMT B&M - Controle de Documentação</title>
+<title>FOPAG e SESMT — B&M</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <!-- evita que o navegador guarde HTML em cache "para sempre" -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.03.1">
+<meta name="app-version" content="2026.07.03.3">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -272,7 +272,7 @@
 <div id="loginScreen">
   <div class="login-box">
     <div class="login-badge"><img src="icon-192.png" alt="SESMT" class="login-icon"></div>
-    <div class="login-tag">Sistema <b>SESMT</b><br>Segurança e Saúde no Trabalho</div>
+    <div class="login-tag">Sistema <b>FOPAG e SESMT</b><br>Documentação, Segurança e Saúde no Trabalho</div>
     <div class="login-feats">
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 7h6M9 11h6M9 15h4"></path></svg>Documentação</span>
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"></path><path d="M4 12h16"></path></svg>Portaria QR</span>
@@ -312,7 +312,7 @@
   </div>
   <div class="footer" id="footer">
     <div id="footerLogo"></div>
-    <div>SESMT • Controle de Documentação • <span id="footerYear"></span> • <b>v<span id="footerVer"></span></b></div>
+    <div>FOPAG e SESMT • Controle de Documentação • <span id="footerYear"></span> • <b>v<span id="footerVer"></span></b></div>
   </div>
 </div>
 
@@ -346,6 +346,7 @@ const ROLES = {
   empresa:{label:'EMPRESA',badge:'empresa'},
   vigia:{label:'VIGIA / PORTARIA',badge:'coordenador'},
   coord_sesmt:{label:'COORD. SESMT',badge:'sesmt'},
+  dp:{label:'DEPTO PESSOAL',badge:'sesmt'},
   ti:{label:'TI',badge:'sesmt'}
 };
 
@@ -356,7 +357,7 @@ let _rtChannel = null;      // canal Supabase Realtime (atualizacao automatica)
 let _docsModalRef = null;   // ref aberto no modal "Documentos: ..."
 let _ultAtividade = Date.now();        // logout por inatividade
 const INATIVIDADE_MS = 30*60*1000;     // 30 min sem uso -> sai sozinho
-const ROLES_ALTA_PRIV = ['diretoria','ti','sesmt','coord_sesmt']; // criam/gerem usuarios -> 2FA mais curto
+const ROLES_ALTA_PRIV = ['diretoria','ti','sesmt','coord_sesmt','dp']; // criam/gerem usuarios -> 2FA mais curto
 function _janela2faMs(tipo){ return ROLES_ALTA_PRIV.includes(tipo) ? 12*3600000 : 86400000; } // 12h vs 24h
 let filtros = {obraId:'',empresaId:'',status:'',busca:''};
 
@@ -369,7 +370,7 @@ function save(){
   _syncTimer = setTimeout(()=>syncToSupabase().catch(e=>{console.error('sync',e); toast('Erro ao salvar online: '+(e.message||e),'err');}), 400);
 }
 function load(){
-  DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],
+  DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],fopagCatalogo:[],fopagDocs:[],
     config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
 }
 
@@ -394,8 +395,8 @@ async function loadFromSupabase(){
     DB.catalogoFuncoes = (cf.data||[]).map(f=>({id:f.id,nome:f.nome,docsIds:f.docs_ids||[]}));
     const emObras = {}; (eo.data||[]).forEach(r=>{(emObras[r.empresa_id]=emObras[r.empresa_id]||[]).push(r.obra_id);});
     DB.empresas = (em.data||[]).map(e=>({id:e.id,cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel,email:e.email,telefone:e.telefone,obraIds:emObras[e.id]||[]}));
-    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,sesmtId:o.sesmt_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[],whatsappGrupo:o.whatsapp_grupo}));
-    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,socio:f.socio_proprietario===true,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
+    DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,sesmtId:o.sesmt_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[],whatsappGrupo:o.whatsapp_grupo,cno:o.cno||''}));
+    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,socio:f.socio_proprietario===true,vinculo:f.vinculo||'clt',qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
     DB.maquinas = (mq.data||[]).map(m=>({id:m.id,empresaId:m.empresa_id,obraId:m.obra_id,descricao:m.descricao,patrimonio:m.patrimonio}));
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
@@ -426,7 +427,7 @@ async function syncToSupabase(){
     }
   }
   for(const o of DB.obras){
-    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null};
+    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null,cno:o.cno||''};
     if(typeof o.id==='number' && o.id<1e9){
       await sb.from('obras').upsert({id:o.id,...row});
     } else {
@@ -448,7 +449,7 @@ async function syncToSupabase(){
     }
   }
   for(const f of DB.funcionarios){
-    const row = {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false,socio_proprietario:f.socio===true,cracha_enviado_em:f.crachaEnviadoEm||null};
+    const row = {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false,socio_proprietario:f.socio===true,vinculo:f.vinculo||'clt',cracha_enviado_em:f.crachaEnviadoEm||null};
     if(typeof f.id==='number' && f.id<1e9){
       await sb.from('funcionarios').upsert({id:f.id,...row});
     } else {
@@ -585,7 +586,7 @@ function _seedDESATIVADO(){
 
 /* ===== LOGIN ===== */
 // Perfis que EXIGEM 2FA TOTP
-const TIPOS_MFA_OBRIGATORIO = ['diretoria','ti','sesmt','coord_sesmt','tst'];
+const TIPOS_MFA_OBRIGATORIO = ['diretoria','ti','sesmt','coord_sesmt','dp','tst'];
 
 async function doLogin(){
   const e = document.getElementById('loginUser').value.trim().toLowerCase();
@@ -722,8 +723,8 @@ function _aplicarMudancaDoc(payload){
         const ref=_refDeDocsModal(); const b=document.getElementById('modalBody');
         if(ref && b) b.innerHTML=renderDocsList(_docsModalRef.tipo, ref);
       }
-    } else if(!modalAberto && currentPage && currentPage!=='config'){
-      go(currentPage); // atualiza a tela de fundo sozinho
+    } else if(!modalAberto && currentPage && currentPage!=='config' && currentPage!=='fopag' && currentPage!=='fopag_catalogo'){
+      go(currentPage); // atualiza a tela de fundo sozinho (FOPAG fora: tem load próprio e piscava)
     }
   }catch(e){ console.error('rtDoc',e); }
 }
@@ -898,6 +899,7 @@ function pode(acao){
     ti:['*'],
     sesmt:['*'],
     coord_sesmt:['*'],
+    dp:['*'],
     coordenador:['ver_obra','enviar_doc','notificar','registrar_acesso'],
     engenheiro:['ver_obra','enviar_doc','notificar'],
     tst:['ver_obra','enviar_doc','notificar','aprovar_doc','registrar_acesso'],
@@ -911,7 +913,7 @@ function pode(acao){
 
 function escopoObras(){
   if(!session) return [];
-  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.obras;
+  if(['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo)) return DB.obras;
   if(session.tipo==='empresa'){
     const emp = DB.empresas.find(e=>e.id===session.empresaId);
     return DB.obras.filter(o=>(emp?.obraIds||[]).includes(o.id));
@@ -921,7 +923,7 @@ function escopoObras(){
 function escopoEmpresas(){
   if(!session) return [];
   if(session.tipo==='empresa') return DB.empresas.filter(e=>e.id===session.empresaId);
-  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.empresas;
+  if(['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo)) return DB.empresas;
   // coord/eng: empresas que têm gente nas suas obras
   const oids = session.obraIds;
   const eids = new Set();
@@ -932,13 +934,13 @@ function escopoEmpresas(){
 function escopoFuncionarios(){
   if(!session) return [];
   if(session.tipo==='empresa') return DB.funcionarios.filter(f=>f.empresaId===session.empresaId);
-  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.funcionarios;
+  if(['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo)) return DB.funcionarios;
   return DB.funcionarios.filter(f=>session.obraIds.includes(f.obraId));
 }
 function escopoMaquinas(){
   if(!session) return [];
   if(session.tipo==='empresa') return DB.maquinas.filter(m=>m.empresaId===session.empresaId);
-  if(['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo)) return DB.maquinas;
+  if(['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo)) return DB.maquinas;
   return DB.maquinas.filter(m=>session.obraIds.includes(m.obraId));
 }
 
@@ -951,14 +953,15 @@ function renderSidebar(){
       {id:'dashboard',icon:'📊',label:'Meu Painel'},
       {id:'minha_empresa',icon:'🏢',label:'Dados da Empresa'},
       {id:'funcionarios',icon:'👷',label:'Meus Colaboradores'},
-      {id:'maquinas',icon:'🚜',label:'Minhas Máquinas'}
+      {id:'maquinas',icon:'🚜',label:'Minhas Máquinas'},
+      {id:'fopag',icon:'🧾',label:'FOPAG Mensal'}
     ];
   } else if(t==='vigia'){
     nav = [
       {id:'portaria',icon:'🛂',label:'Portaria'},
       {id:'efetivo',icon:'📋',label:'Efetivo do Dia'}
     ];
-  } else if(t==='sesmt' || t==='diretoria' || t==='coord_sesmt' || t==='ti'){
+  } else if(t==='sesmt' || t==='diretoria' || t==='coord_sesmt' || t==='ti' || t==='dp'){
     nav = [
       {sec:'OPERAÇÃO'},
       {id:'dashboard',icon:'📊',label:'Dashboard'},
@@ -970,6 +973,9 @@ function renderSidebar(){
       {id:'downloads',icon:'⬇️',label:'Downloads'},
       {id:'relatorios',icon:'📑',label:'Relatórios'},
       {id:'notificacoes',icon:'✉️',label:'Notificações'},
+      {sec:'FOPAG'},
+      {id:'fopag',icon:'🧾',label:'FOPAG Mensal'},
+      {id:'fopag_catalogo',icon:'📚',label:'Catálogo FOPAG'},
       {sec:'CONTROLE DE ACESSO'},
       {id:'portaria',icon:'🛂',label:'Portaria'},
       {id:'efetivo',icon:'📋',label:'Efetivo do Dia'},
@@ -992,6 +998,7 @@ function renderSidebar(){
     ];
     if(pode('registrar_acesso')) nav.push({id:'portaria',icon:'🛂',label:'Portaria'});
     nav.push({id:'efetivo',icon:'📋',label:'Efetivo do Dia'});
+    nav.push({id:'fopag',icon:'🧾',label:'FOPAG Mensal'});
     if(t!=='visualizador') nav.push({id:'notificacoes',icon:'✉️',label:'Notificações'});
   }
   document.getElementById('sidebar').innerHTML = nav.map(n=>
@@ -1011,10 +1018,362 @@ function go(page){
     funcionarios:renderFuncionarios, maquinas:renderMaquinas, relatorios:renderRelatorios,
     notificacoes:renderNotificacoes, catalogo_docs:renderCatalogoDocs, catalogo_funcoes:renderCatalogoFuncoes,
     usuarios:renderUsuarios, config:renderConfig, devolutiva:renderDevolutiva, downloads:renderDownloads,
-    portaria:renderPortaria, efetivo:renderEfetivo
+    portaria:renderPortaria, efetivo:renderEfetivo, fopag:renderFopag, fopag_catalogo:renderFopagCatalogo
   })[page];
   if(typeof _scanner!=='undefined' && _scanner && page!=='portaria'){ try{pararScanner();}catch(e){} }
   if(fn) fn();
+}
+
+/* ============================================================================
+   ===== FOPAG MENSAL (apartado do SESMT) =====
+   Documentação previdenciária e FOPAG por competência (YYYY-MM).
+   Empresa deve enviar 1x/mês (prazo: até o ÚLTIMO DIA do mês seguinte).
+   CLT ativo na obra -> 17 itens da empresa; PJ/Contrato -> NF + comprovante por colaborador.
+   IA confere tipo, competência e CNO da obra (sem CNO, CNPJ).
+   ============================================================================ */
+let _fopag = {comp:'', obraId:'', view:'lista', eid:null, oid:null};
+
+function fopagCompAtual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function fopagCompAdd(comp, delta){ const [y,m]=comp.split('-').map(Number); const d=new Date(y, m-1+delta, 1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function fopagCompLabel(comp){ const [y,m]=comp.split('-').map(Number); const nomes=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']; return nomes[m-1]+'/'+y; }
+function fopagPrazoFim(comp){ const [y,m]=comp.split('-').map(Number); return new Date(y, m+1, 0, 23,59,59); } // último dia do mês seguinte
+function fopagEmAtraso(comp){ return new Date() > fopagPrazoFim(comp); }
+function fopagPrazoLabel(comp){ const d=fopagPrazoFim(comp); return d.toLocaleDateString('pt-BR'); }
+
+async function loadFopag(){
+  try{
+    const [cat, docs] = await Promise.all([
+      sb.from('fopag_catalogo').select('*').eq('ativo', true).order('ordem'),
+      sb.from('fopag_documentos').select('*')
+    ]);
+    if(cat.error) throw cat.error;
+    DB.fopagCatalogo = (cat.data||[]).map(c=>({id:c.id,nome:c.nome,grupo:c.grupo,observacao:c.observacao||'',checklistIA:c.checklist_ia||'',aplica:c.aplica,ordem:c.ordem}));
+    DB.fopagDocs = (docs.data||[]).map(fopagRowMap);
+    return true;
+  }catch(e){
+    DB.fopagCatalogo = DB.fopagCatalogo||[];
+    toast('FOPAG: rode a migration-fopag.sql no Supabase ('+(e.message||e)+')','err');
+    return false;
+  }
+}
+function fopagRowMap(d){ return {id:d.id,empresaId:d.empresa_id,obraId:d.obra_id,competencia:d.competencia,docId:d.doc_id,funcionarioId:d.funcionario_id,arquivo:d.arquivo||'',arquivoPath:d.arquivo_path||'',iaStatus:d.ia_status||'pendente',iaNota:d.ia_nota||'',sesmtStatus:d.sesmt_status||'pendente',sesmtMotivo:d.sesmt_motivo||''}; }
+function fopagGetDoc(eid,oid,comp,docId,funcId){ return DB.fopagDocs.find(r=>r.empresaId===eid&&r.obraId===oid&&r.competencia===comp&&r.docId===docId&&(funcId?r.funcionarioId===funcId:!r.funcionarioId)); }
+
+// Obrigações da competência: empresa×obra com colaboradores ativos
+function fopagObrigacoes(){
+  const out=[];
+  const obras = escopoObras().filter(o=>o.ativa!==false && (!_fopag.obraId || o.id==_fopag.obraId));
+  const emps = escopoEmpresas();
+  for(const e of emps){
+    for(const o of obras){
+      const funcs = DB.funcionarios.filter(f=>f.empresaId===e.id && f.obraId===o.id && f.ativo!==false);
+      if(!funcs.length) continue;
+      const pjs = funcs.filter(f=>f.vinculo==='pj');
+      const temClt = funcs.some(f=>f.vinculo!=='pj');
+      out.push({empresa:e, obra:o, temClt, pjs});
+    }
+  }
+  return out;
+}
+function fopagItensEmpresa(){ return DB.fopagCatalogo.filter(c=>c.aplica==='empresa'); }
+function fopagItensPj(){ return DB.fopagCatalogo.filter(c=>c.aplica==='pj'); }
+
+function fopagStatusChip(row){
+  if(!row || !row.arquivoPath) return {label:'NÃO ENVIADO', bg:'#fee2e2', fg:'#b91c1c'};
+  if(row.sesmtStatus==='recusado') return {label:'RECUSADO', bg:'#fee2e2', fg:'#b91c1c'};
+  if(row.sesmtStatus==='aprovado') return {label:'APROVADO', bg:'#dcfce7', fg:'#15803d'};
+  if(row.iaStatus==='pendente' && /Analisando/i.test(row.iaNota||'')) return {label:'🤖 ANALISANDO', bg:'#dbeafe', fg:'#1d4ed8'};
+  return {label:'AGUARDANDO SESMT'+(row.iaStatus&&row.iaStatus!=='pendente'?' · IA: '+row.iaStatus:''), bg:'#fef3c7', fg:'#b45309'};
+}
+function fopagResumo(ob, comp){
+  let total=0, aprov=0, envi=0;
+  const conta = (docId, funcId)=>{ total++; const r=fopagGetDoc(ob.empresa.id, ob.obra.id, comp, docId, funcId); if(r&&r.arquivoPath){envi++; if(r.sesmtStatus==='aprovado')aprov++;} };
+  if(ob.temClt) fopagItensEmpresa().forEach(i=>conta(i.id,null));
+  ob.pjs.forEach(pj=>fopagItensPj().forEach(i=>conta(i.id,pj.id)));
+  return {total, aprov, envi};
+}
+
+async function renderFopag(){
+  if(!_fopag.comp) _fopag.comp = fopagCompAtual();
+  if(_fopag.view==='detalhe'){ return renderFopagDetalhe(); }
+  if(!DB.fopagCatalogo.length) document.getElementById('main').innerHTML = '<div class="empty">Carregando FOPAG…</div>'; // só na 1ª vez (sem piscar)
+  const ok = await loadFopag();
+  if(!ok){ document.getElementById('main').innerHTML='<div class="empty">FOPAG indisponível — rode a <b>migration-fopag.sql</b> no Supabase e recarregue.</div>'; return; }
+  const comp=_fopag.comp, atr=fopagEmAtraso(comp);
+  const obs = fopagObrigacoes();
+  const obras = escopoObras().filter(o=>o.ativa!==false);
+  const cards = obs.map(ob=>{
+    const r = fopagResumo(ob, comp);
+    const completo = r.total>0 && r.aprov===r.total;
+    const badge = completo ? '<span style="background:#dcfce7;color:#15803d;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700">COMPLETO</span>'
+      : (atr ? '<span style="background:#fee2e2;color:#b91c1c;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700">EM ATRASO</span>'
+             : '<span style="background:#fef3c7;color:#b45309;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700">NO PRAZO até '+fopagPrazoLabel(comp)+'</span>');
+    return `<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-weight:700">${escapeHtml(ob.empresa.razao)}</div>
+        <div style="font-size:12px;color:var(--muted)">🏗️ ${escapeHtml(ob.obra.nome)}${ob.obra.cno?' · CNO '+escapeHtml(ob.obra.cno):' · <span style="color:#b45309">sem CNO cadastrado</span>'}</div>
+        <div style="font-size:12px;margin-top:4px">${ob.temClt?'📋 17 itens da empresa':''}${ob.temClt&&ob.pjs.length?' + ':''}${ob.pjs.length?'👤 '+ob.pjs.length+' PJ (NF + comprovante)':''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="margin-bottom:6px">${badge}</div>
+        <div style="font-size:12px;color:var(--muted)">${r.envi}/${r.total} enviados · <b style="color:${r.aprov===r.total&&r.total?'#15803d':'#b45309'}">${r.aprov}/${r.total} aprovados</b></div>
+        <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="fopagAbrir(${ob.empresa.id},${ob.obra.id})">Abrir</button>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">🧾 FOPAG Mensal</div><div class="page-sub">Documentação previdenciária e FOPAG — prazo: até o último dia do mês seguinte à competência</div></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow)">
+      <button class="btn btn-secondary btn-sm" onclick="_fopag.comp=fopagCompAdd(_fopag.comp,-1);renderFopag()">◀</button>
+      <div style="text-align:center;min-width:150px"><b style="font-size:15px">${fopagCompLabel(comp)}</b><div style="font-size:11px;color:${atr?'#b91c1c':'var(--muted)'}">${atr?'prazo encerrado em '+fopagPrazoLabel(comp):'envio até '+fopagPrazoLabel(comp)}</div></div>
+      <button class="btn btn-secondary btn-sm" onclick="_fopag.comp=fopagCompAdd(_fopag.comp,1);renderFopag()">▶</button>
+      <select onchange="_fopag.obraId=this.value;renderFopag()" style="max-width:220px"><option value="">Todas as obras</option>${obras.map(o=>`<option value="${o.id}" ${_fopag.obraId==o.id?'selected':''}>${escapeHtml(o.nome)}</option>`).join('')}</select>
+      <button class="btn btn-secondary btn-sm" onclick="renderFopag()">🔄 Atualizar</button>
+    </div>
+    ${obs.length?`<div style="display:grid;gap:10px">${cards}</div>`:'<div class="empty">Nenhuma empresa com colaboradores ativos nas obras do seu escopo.</div>'}`;
+}
+
+function fopagAbrir(eid, oid){ _fopag.view='detalhe'; _fopag.eid=eid; _fopag.oid=oid; renderFopagDetalhe(); }
+function fopagVoltar(){ _fopag.view='lista'; renderFopag(); }
+
+function fopagRowHtml(item, row, eid, oid, funcId, funcNome){
+  const chip = fopagStatusChip(row);
+  const podeEnv = pode('enviar_doc');
+  const podeApr = pode('aprovar_doc');
+  const acoes = [
+    podeEnv?`<button class="btn btn-primary btn-sm" onclick="fopagUpload(${eid},${oid},'${item.id}',${funcId||'null'})">${row&&row.arquivoPath?'↺ Reenviar':'📤 Enviar'}</button>`:'',
+    row&&row.arquivoPath?`<button class="btn btn-secondary btn-sm" onclick="fopagAbrirArq('${row.arquivoPath}')">👁️ Abrir</button>`:'',
+    row&&row.arquivoPath&&podeApr&&row.sesmtStatus!=='aprovado'?`<button class="btn btn-secondary btn-sm" onclick="fopagAprovar(${row.id})">✅ Aprovar</button>`:'',
+    row&&row.arquivoPath&&podeApr&&row.sesmtStatus!=='recusado'?`<button class="btn btn-danger btn-sm" onclick="fopagRecusar(${row.id})">✖ Recusar</button>`:''
+  ].filter(Boolean).join(' ');
+  return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+    <div style="flex:1;min-width:240px">
+      <div style="font-weight:600;font-size:13px">${funcNome?'👤 '+escapeHtml(funcNome)+' — ':''}${escapeHtml(item.nome)}</div>
+      ${item.observacao?`<div style="font-size:11px;color:var(--muted)">${escapeHtml(item.observacao)}</div>`:''}
+      ${row&&row.iaNota?`<div style="font-size:11px;margin-top:4px;background:#f3f4f6;border-radius:6px;padding:5px 8px;white-space:pre-wrap;word-break:break-word">🤖 ${escapeHtml(row.iaNota)}</div>`:''}
+      ${row&&row.sesmtStatus==='recusado'&&row.sesmtMotivo?`<div style="font-size:11px;color:#b91c1c;margin-top:3px">Motivo: ${escapeHtml(row.sesmtMotivo)}</div>`:''}
+    </div>
+    <div style="text-align:right">
+      <span style="background:${chip.bg};color:${chip.fg};padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap">${chip.label}</span>
+      <div style="margin-top:6px;display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap">${acoes}</div>
+    </div>
+  </div>`;
+}
+
+function renderFopagDetalhe(){
+  const eid=_fopag.eid, oid=_fopag.oid, comp=_fopag.comp;
+  const emp=DB.empresas.find(e=>e.id===eid), obra=DB.obras.find(o=>o.id===oid);
+  if(!emp||!obra){ fopagVoltar(); return; }
+  const funcs = DB.funcionarios.filter(f=>f.empresaId===eid && f.obraId===oid && f.ativo!==false);
+  const pjs = funcs.filter(f=>f.vinculo==='pj');
+  const temClt = funcs.some(f=>f.vinculo!=='pj');
+  let html = '';
+  if(temClt){
+    const grupos = [...new Set(fopagItensEmpresa().map(i=>i.grupo))];
+    html += grupos.map(g=>`
+      <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 16px 2px;box-shadow:var(--shadow);margin-bottom:12px">
+        <h4 style="margin:8px 0;color:var(--bm-blue);border-bottom:2px solid var(--bm-orange);padding-bottom:6px">${escapeHtml(g)}</h4>
+        ${fopagItensEmpresa().filter(i=>i.grupo===g).map(i=>fopagRowHtml(i, fopagGetDoc(eid,oid,comp,i.id,null), eid, oid, null, null)).join('')}
+      </div>`).join('');
+  } else {
+    html += '<div class="alert info" style="margin-bottom:12px">Empresa sem colaboradores CLT nesta obra — os 17 itens mensais não são exigidos. Exigem-se apenas os documentos dos prestadores PJ abaixo.</div>';
+  }
+  if(pjs.length){
+    html += `<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 16px 2px;box-shadow:var(--shadow);margin-bottom:12px">
+      <h4 style="margin:8px 0;color:var(--bm-blue);border-bottom:2px solid var(--bm-orange);padding-bottom:6px">PJ / CONTRATO — documentos por colaborador</h4>
+      ${pjs.map(pj=>fopagItensPj().map(i=>fopagRowHtml(i, fopagGetDoc(eid,oid,comp,i.id,pj.id), eid, oid, pj.id, pj.nome)).join('')).join('')}
+    </div>`;
+  }
+  const atr = fopagEmAtraso(comp);
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">🧾 FOPAG — ${escapeHtml(emp.razao)}</div>
+      <div class="page-sub">🏗️ ${escapeHtml(obra.nome)}${obra.cno?' · CNO '+escapeHtml(obra.cno):' · <b style="color:#b45309">obra sem CNO — IA confere pelo CNPJ</b>'} · Competência <b>${fopagCompLabel(comp)}</b> · <span style="color:${atr?'#b91c1c':'inherit'}">${atr?'EM ATRASO (prazo era '+fopagPrazoLabel(comp)+')':'prazo até '+fopagPrazoLabel(comp)}</span></div></div>
+      <button class="btn btn-secondary" onclick="fopagVoltar()">← Voltar</button>
+    </div>
+    ${html||'<div class="empty">Nenhum colaborador ativo desta empresa nesta obra.</div>'}`;
+}
+
+/* ---- upload FOPAG ---- */
+function fopagUpload(eid, oid, docId, funcId){
+  const item = DB.fopagCatalogo.find(c=>c.id===docId); if(!item) return;
+  const comp=_fopag.comp;
+  const pj = funcId ? DB.funcionarios.find(f=>f.id===funcId) : null;
+  showModal(`FOPAG ${fopagCompLabel(comp)}: ${item.nome}`, `
+    ${item.observacao?`<div class="alert info" style="font-size:12px">${escapeHtml(item.observacao)}</div>`:''}
+    <div class="form-group">
+      <label>Arquivo PDF ${pj?('— '+escapeHtml(pj.nome)):''}</label>
+      <input id="fp_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg">
+    </div>
+    <div class="alert ${DB.config.iaHabilitada!==false?'success':'info'}" style="font-size:12px">🤖 A IA confere: tipo do documento, competência <b>${fopagCompLabel(comp)}</b> e o <b>CNO da obra</b> (sem CNO, o CNPJ).</div>
+  `, async ()=>{
+    const arq = document.getElementById('fp_arq').files[0];
+    if(!arq){ toast('Selecione o arquivo','err'); return false; }
+    const stamp=Date.now(), safe=arq.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,80);
+    const path = `fopag/${eid}/${oid}/${comp}/${docId}${funcId?'_f'+funcId:''}_${stamp}_${safe}`;
+    toast('Enviando arquivo...');
+    const {error:upErr} = await sb.storage.from('documentos').upload(path, arq, {contentType:arq.type||'application/pdf', upsert:true});
+    if(upErr){ toast('Erro ao subir: '+upErr.message,'err'); return false; }
+    const existing = fopagGetDoc(eid,oid,comp,docId,funcId||null);
+    const vaiIA = DB.config.iaHabilitada!==false;
+    const campos = {arquivo:arq.name, arquivo_path:path, ia_status:'pendente', ia_nota:vaiIA?'🤖 Analisando documento…':'', sesmt_status:'pendente', sesmt_motivo:'', atualizado_em:new Date().toISOString()};
+    let row;
+    if(existing){
+      if(existing.arquivoPath && existing.arquivoPath!==path) sb.storage.from('documentos').remove([existing.arquivoPath]).catch(()=>{});
+      const {data,error} = await sb.from('fopag_documentos').update(campos).eq('id', existing.id).select().single();
+      if(error){ toast('Erro ao salvar: '+error.message,'err'); return false; }
+      row = fopagRowMap(data); DB.fopagDocs = DB.fopagDocs.map(r=>r.id===row.id?row:r);
+    } else {
+      const {data,error} = await sb.from('fopag_documentos').insert({empresa_id:eid,obra_id:oid,competencia:comp,doc_id:docId,funcionario_id:funcId||null,...campos}).select().single();
+      if(error){ toast('Erro ao salvar: '+error.message,'err'); return false; }
+      row = fopagRowMap(data); DB.fopagDocs.push(row);
+    }
+    closeModal(); if(currentPage==='fopag') renderFopagDetalhe();
+    if(vaiIA){ toast('Documento enviado. A IA está analisando…'); fopagIA(row, arq, item, pj); }
+    else toast('Documento enviado.');
+    return true;
+  });
+}
+
+/* ---- IA FOPAG (híbrida: direta com chave; Edge analisar-documento sem chave) ---- */
+function fopagPrompt(item, comp, emp, obra, pj){
+  return `Voce e um analista SENIOR de Departamento Pessoal / FOPAG de uma construtora brasileira (Brandao & Marmo), conferindo a documentacao previdenciaria e de folha MENSAL enviada por empresas subcontratadas.
+
+DOCUMENTO ESPERADO: "${item.nome}" (grupo: ${item.grupo})
+COMPETENCIA ESPERADA: ${comp} (${fopagCompLabel(comp)}) — mes/ano a que o documento deve se referir
+${item.observacao?'REGRA DA B&M: '+item.observacao:''}
+${item.checklistIA?'CHECKLIST: '+item.checklistIA:''}
+
+CONTEXTO CADASTRADO:
+• EMPRESA PRESTADORA: ${emp?.razao||''} (CNPJ ${emp?.cnpj||''})
+• OBRA/TOMADOR: ${obra?.nome||''} — CNO: ${obra?.cno||'NAO INFORMADO (use o CNPJ como referencia)'}
+${pj?('• PRESTADOR PJ: '+pj.nome+' (CPF '+(pj.cpf||'')+')'):''}
+
+VERIFICACOES OBRIGATORIAS:
+1. TIPO: e realmente o documento esperado?
+2. COMPETENCIA: refere-se a ${comp}? Aceite variacoes de formato ("${comp.split('-')[1]}/${comp.split('-')[0]}", "${fopagCompLabel(comp)}").
+3. CNO: se este tipo de documento cita obra/tomador, confira se o CNO cadastrado aparece corretamente (ignore pontuacao/formatacao; compare os DIGITOS). Sem CNO cadastrado, confira o CNPJ. Se o documento nao costuma citar CNO (ex: holerite, comprovante bancario), marque "nao_aplicavel".
+4. EMPRESA: CNPJ/razao social da prestadora confere (aceite variacoes de acentuacao/abreviacao)?
+
+PRINCIPIO: NA DUVIDA marque "duvida" (revisao humana), NAO "recusado". So recuse com problema CLARO: competencia de outro mes, CNO/CNPJ com digitos divergentes, tipo de documento completamente diferente, ou ilegivel.
+
+OUTPUT: APENAS UM JSON PURO, sem markdown:
+{"status":"aprovado|duvida|recusado","resumo":"uma frase curta","competencia_ok":"sim|nao|nao_visivel","cno_ok":"sim|nao|nao_aplicavel|nao_visivel","divergencias":["problemas reais, ou vazio"],"recomendacao":"se nao aprovado, o que corrigir"}`;
+}
+async function fopagIA(row, file, item, pj){
+  try{
+    if(DB.config.iaHabilitada===false) return;
+    item = item || DB.fopagCatalogo.find(c=>c.id===row.docId);
+    const emp = DB.empresas.find(e=>e.id===row.empresaId);
+    const obra = DB.obras.find(o=>o.id===row.obraId);
+    pj = pj || (row.funcionarioId ? DB.funcionarios.find(f=>f.id===row.funcionarioId) : null);
+    const prompt = fopagPrompt(item, row.competencia, emp, obra, pj);
+    const base64 = await fileToBase64(file);
+    const mimeType = file.type || 'application/pdf';
+    let text='', falhou=null;
+    if(DB.config.geminiApiKey){
+      const r = await _geminiDireto(base64, mimeType, prompt);
+      if(r.ok) text=r.text||''; else falhou=r;
+    } else {
+      const {data,error} = await sb.functions.invoke('analisar-documento',{body:{base64,mimeType,prompt}});
+      if(!error && data && data.ok) text=String(data.text||''); else falhou={status:(data&&data.status)||0};
+    }
+    let st='pendente', nota='';
+    if(falhou){
+      nota = falhou.status===429 ? 'Cota diária da IA esgotada. Reenvie/reanalise mais tarde ou avalie manualmente.'
+           : 'IA indisponível agora. Avalie manualmente ou reenvie o arquivo.';
+    } else {
+      const cleaned = text.replace(/```json|```/g,'').trim();
+      let p=null; try{ p=JSON.parse(cleaned); }catch(e){ const m=cleaned.match(/\{[\s\S]*\}/); if(m){ try{p=JSON.parse(m[0]);}catch(e2){} } }
+      if(!p){ nota='IA respondeu fora do formato. Avalie manualmente.'; }
+      else{
+        st = ['aprovado','duvida','recusado'].includes(p.status)?p.status:'duvida';
+        const flags=[];
+        if(p.competencia_ok==='nao') flags.push('⚠️ competência divergente');
+        if(p.cno_ok==='nao') flags.push('⚠️ CNO/CNPJ divergente');
+        nota = (p.resumo||'') + (flags.length?' | '+flags.join(' · '):'')
+             + (p.divergencias&&p.divergencias.length?'\nDivergências: '+p.divergencias.join('; '):'')
+             + (p.recomendacao?'\nComo corrigir: '+p.recomendacao:'');
+      }
+    }
+    await sb.from('fopag_documentos').update({ia_status:st, ia_nota:nota, atualizado_em:new Date().toISOString()}).eq('id', row.id);
+    const local = DB.fopagDocs.find(r=>r.id===row.id); if(local){ local.iaStatus=st; local.iaNota=nota; }
+    if(currentPage==='fopag' && _fopag.view==='detalhe') renderFopagDetalhe();
+    toast('IA FOPAG: '+st, st==='recusado'?'err':st==='duvida'?'warn':'');
+  }catch(e){ console.warn('fopagIA', e); }
+}
+
+/* ---- ações SESMT/aprovador ---- */
+async function fopagAprovar(id){
+  const {error} = await sb.from('fopag_documentos').update({sesmt_status:'aprovado', sesmt_motivo:'', atualizado_em:new Date().toISOString()}).eq('id', id);
+  if(error){ toast('Erro: '+error.message,'err'); return; }
+  const r=DB.fopagDocs.find(x=>x.id===id); if(r){ r.sesmtStatus='aprovado'; r.sesmtMotivo=''; }
+  toast('Documento aprovado'); renderFopagDetalhe();
+}
+async function fopagRecusar(id){
+  const motivo = prompt('Motivo da recusa (a empresa verá este texto):'); if(motivo===null) return;
+  const {error} = await sb.from('fopag_documentos').update({sesmt_status:'recusado', sesmt_motivo:motivo||'', atualizado_em:new Date().toISOString()}).eq('id', id);
+  if(error){ toast('Erro: '+error.message,'err'); return; }
+  const r=DB.fopagDocs.find(x=>x.id===id); if(r){ r.sesmtStatus='recusado'; r.sesmtMotivo=motivo||''; }
+  toast('Documento recusado','warn'); renderFopagDetalhe();
+}
+/* ---- Catálogo FOPAG (edição dos itens + orientações ao bot) ---- */
+async function renderFopagCatalogo(){
+  if(!DB.fopagCatalogo.length) document.getElementById('main').innerHTML='<div class="empty">Carregando catálogo…</div>';
+  await loadFopag();
+  const rows = DB.fopagCatalogo.slice().sort((a,b)=>a.ordem-b.ordem).map(c=>`
+    <tr style="${c.ativo===false?'opacity:.5':''}">
+      <td>${c.ordem}</td>
+      <td style="font-size:11px;color:var(--muted)">${escapeHtml(c.grupo)}</td>
+      <td><b>${escapeHtml(c.nome)}</b>${c.observacao?`<div style="font-size:11px;color:var(--muted)">${escapeHtml(c.observacao)}</div>`:''}</td>
+      <td>${c.aplica==='pj'?'<span class="pill">PJ (por colaborador)</span>':'<span class="pill">Empresa</span>'}</td>
+      <td style="font-size:11px;max-width:280px">${escapeHtml((c.checklistIA||'').slice(0,90))}${(c.checklistIA||'').length>90?'…':''}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="editFopagCatItem('${c.id}')">Editar</button></td>
+    </tr>`).join('');
+  document.getElementById('main').innerHTML = `
+    <div class="page-header">
+      <div><div class="page-title">📚 Catálogo FOPAG</div><div class="page-sub">Itens mensais exigidos e as orientações ao bot verificador (IA)</div></div>
+      <button class="btn btn-primary" onclick="editFopagCatItem()">+ Novo item</button>
+    </div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 14px;box-shadow:var(--shadow);overflow-x:auto">
+      <table><thead><tr><th>#</th><th>Grupo</th><th>Documento</th><th>Aplica a</th><th>Orientação à IA</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+}
+function editFopagCatItem(id){
+  const c = id ? DB.fopagCatalogo.find(x=>x.id===id) : {id:'fpx_'+Date.now(), nome:'', grupo:'', observacao:'', checklistIA:'', aplica:'empresa', ordem:(Math.max(0,...DB.fopagCatalogo.map(x=>x.ordem))+1), ativo:true};
+  if(!c) return;
+  const grupos = [...new Set(DB.fopagCatalogo.map(x=>x.grupo))];
+  showModal(id?'Editar item FOPAG':'Novo item FOPAG', `
+    <div class="form-group"><label>Nome do documento</label><input id="fc_nome" value="${escapeHtml(c.nome)}"></div>
+    <div class="grid-3">
+      <div class="form-group"><label>Grupo (seção)</label><input id="fc_grupo" value="${escapeHtml(c.grupo)}" list="fc_grupos"><datalist id="fc_grupos">${grupos.map(g=>`<option value="${escapeHtml(g)}">`).join('')}</datalist></div>
+      <div class="form-group"><label>Aplica a</label><select id="fc_aplica"><option value="empresa" ${c.aplica!=='pj'?'selected':''}>Empresa (mensal geral)</option><option value="pj" ${c.aplica==='pj'?'selected':''}>PJ (por colaborador)</option></select></div>
+      <div class="form-group"><label>Ordem</label><input id="fc_ordem" type="number" value="${c.ordem}"></div>
+    </div>
+    <div class="form-group"><label>Observação (aparece para a empresa)</label><textarea id="fc_obs" rows="2">${escapeHtml(c.observacao||'')}</textarea></div>
+    <div class="form-group"><label>🤖 Orientações ao bot verificador (checklist da IA)</label><textarea id="fc_ia" rows="5" placeholder="O que a IA deve conferir neste documento...">${escapeHtml(c.checklistIA||'')}</textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">A IA sempre confere automaticamente: tipo do documento, competência (mês/ano) e CNO da obra (sem CNO, o CNPJ). Escreva aqui as exigências específicas deste item.</div></div>
+    <div class="form-group"><label><input type="checkbox" id="fc_ativo" ${c.ativo!==false?'checked':''} style="width:auto"> Item ativo (exigido nas competências)</label></div>
+  `, async ()=>{
+    const row = {id:c.id, nome:val('fc_nome'), grupo:val('fc_grupo')||'OUTROS', observacao:val('fc_obs'), checklist_ia:val('fc_ia'), aplica:val('fc_aplica'), ordem:parseInt(val('fc_ordem'))||0, ativo:document.getElementById('fc_ativo').checked};
+    if(!row.nome){ toast('Nome obrigatório','err'); return false; }
+    const {error} = await sb.from('fopag_catalogo').upsert(row);
+    if(error){ toast('Erro ao salvar: '+error.message,'err'); return false; }
+    await loadFopag(); go('fopag_catalogo'); toast('Item salvo');
+    return true;
+  }, id?[{label:'Excluir',cls:'btn-danger',fn:async ()=>{
+    if(!confirm('Excluir este item do catálogo FOPAG? Se já houver documentos enviados dele, prefira DESATIVAR (desmarcar "ativo").')) return;
+    const {error} = await sb.from('fopag_catalogo').delete().eq('id', c.id);
+    if(error){ toast('Não foi possível excluir (há documentos vinculados). Desative o item. '+error.message,'err'); return; }
+    await loadFopag(); closeModal(); go('fopag_catalogo'); toast('Item excluído');
+  }}]:[]);
+}
+async function fopagAbrirArq(path){
+  const {data,error} = await sb.storage.from('documentos').createSignedUrl(path, 3600);
+  if(error||!data?.signedUrl){ toast('Não foi possível abrir: '+(error?.message||''),'err'); return; }
+  window.open(data.signedUrl,'_blank');
 }
 
 /* ===== CONTROLE DE ACESSO (PORTARIA / QR / EFETIVO) ===== */
@@ -1155,7 +1514,7 @@ async function processarCodigo(txt){
 async function recarregarFuncionarios(){
   try{
     const {data} = await sb.from('funcionarios').select('*');
-    if(data) DB.funcionarios = data.map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,socio:f.socio_proprietario===true,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
+    if(data) DB.funcionarios = data.map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,socio:f.socio_proprietario===true,vinculo:f.vinculo||'clt',qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
   }catch(e){}
 }
 function registrarEntradaManual(id){
@@ -1207,7 +1566,7 @@ async function registrarAcesso(func, sit, acao){
 /* ===== EFETIVO DIARIO ===== */
 function renderEfetivo(){
   const obras = escopoObras();
-  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo);
   if(_portaria.obraId==null && obras[0]) _portaria.obraId = obras[0].id;
   const dia = filtros._dia || hoje();
   const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
@@ -1264,7 +1623,7 @@ function renderEfetivo(){
 
 function exportarEfetivoCSV(){
   const dia = filtros._dia || hoje();
-  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo);
   const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
   let acc = DB.acessos.filter(a=>String(a.momento||'').slice(0,10)===dia);
   if(obraSel) acc = acc.filter(a=>String(a.obraId)===String(obraSel));
@@ -1284,7 +1643,7 @@ function exportarEfetivoCSV(){
 
 function imprimirEfetivo(){
   const dia = filtros._dia || hoje();
-  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo);
   const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
   let acc = DB.acessos.filter(a=>String(a.momento||'').slice(0,10)===dia);
   if(obraSel) acc = acc.filter(a=>String(a.obraId)===String(obraSel));
@@ -1518,7 +1877,7 @@ async function listarGruposWhatsapp(){
 }
 
 async function enviarEfetivoGrupoAgora(){
-  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','visualizador'].includes(session.tipo);
+  const podeTodas = ['diretoria','ti','sesmt','coord_sesmt','dp','visualizador'].includes(session.tipo);
   const obraSel = (filtros._efObra!==undefined) ? filtros._efObra : (podeTodas ? '' : (_portaria.obraId||''));
   if(!confirm('Enviar o efetivo de hoje para o(s) grupo(s) de WhatsApp agora?')) return;
   toast('Enviando efetivo...');
@@ -1976,7 +2335,7 @@ function arquivarObra(id){
 }
 function renderObras(){
   const lista = escopoObras().filter(o=>!filtros.busca || o.nome.toLowerCase().includes(filtros.busca.toLowerCase()));
-  const canEdit = pode('*') || (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
+  const canEdit = pode('*') || (session.tipo==='sesmt'||session.tipo==='coord_sesmt'||session.tipo==='dp');
   document.getElementById('main').innerHTML = `
     <div class="page-header">
       <div><div class="page-title">Obras</div><div class="page-sub">Documentações exigidas são definidas por obra</div></div>
@@ -2028,6 +2387,8 @@ function editObra(id){
       </div>
     </div>
     <div class="form-group"><label>Cliente / Tomador da Obra (nome)</label><input id="f_cliente" value="${o.clienteNome||''}" placeholder="Ex: Hospital Municipal Nova HU"></div>
+    <div class="form-group"><label>🧾 CNO da obra (Cadastro Nacional de Obras)</label><input id="f_cno" value="${o.cno||''}" placeholder="Ex: 90.123.45678/90">
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Usado pela IA do FOPAG para conferir se os documentos mensais estão vinculados ao CNO correto. Sem CNO, a conferência usa o CNPJ.</div></div>
     <div class="form-group"><label>📱 Grupo de WhatsApp da obra (efetivo diário)</label>
       <div style="display:flex;gap:8px">
         <input id="f_wgrupo" value="${o.whatsappGrupo||''}" placeholder="ID do grupo (termina em @g.us)" style="flex:1">
@@ -2059,7 +2420,7 @@ function editObra(id){
     const data = {
       nome:val('f_nome'),endereco:val('f_end'),
       coordenadorId:val('f_coord')||null, engenheiroId:val('f_eng')||null, tstId:val('f_tst')||null, sesmtId:val('f_sesmt')||null,
-      clienteNome:val('f_cliente'), destinatariosExtras:val('f_destext'), whatsappGrupo:val('f_wgrupo')||null,
+      clienteNome:val('f_cliente'), destinatariosExtras:val('f_destext'), whatsappGrupo:val('f_wgrupo')||null, cno:val('f_cno')||'',
       ativa:document.getElementById('f_ativa').checked,
       docsEmpresa: getChecked('f_docs_empresa'),
       docsFuncionarioBase: getChecked('f_docs_func'),
@@ -2261,7 +2622,7 @@ function renderFuncionarios(){
       if(filtros.status==='info') return s.aguard>0;
     });
   }
-  const isAdmin = (session.tipo==='sesmt'||session.tipo==='coord_sesmt');
+  const isAdmin = (session.tipo==='sesmt'||session.tipo==='coord_sesmt'||session.tipo==='dp');
   const isEmpresa = session.tipo==='empresa';
   document.getElementById('main').innerHTML = `
     <div class="page-header">
@@ -2314,7 +2675,12 @@ function editFuncionario(id){
     <div class="form-group"><label>Obra</label>
       <select id="f_obra"><option value="">--</option>${obras.filter(o=>o.ativa).map(o=>`<option value="${o.id}" ${f.obraId===o.id?'selected':''}>${o.nome}</option>`).join('')}</select>
     </div>
-    <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="f_socio" ${f.socio?'checked':''} style="width:auto"> Sócio Proprietário <span style="font-size:11px;color:var(--gray,#6b7280)">(dispensa Ficha Cadastral e Dados Contratuais)</span></label></div>
+    <div class="grid-2">
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:26px"><input type="checkbox" id="f_socio" ${f.socio?'checked':''} style="width:auto"> Sócio Proprietário <span style="font-size:11px;color:var(--gray,#6b7280)">(dispensa Ficha Cadastral e Dados Contratuais)</span></label></div>
+      <div class="form-group"><label>Vínculo (FOPAG mensal)</label>
+        <select id="f_vinculo"><option value="clt" ${(f.vinculo||'clt')==='clt'?'selected':''}>CLT — registrado em carteira</option><option value="pj" ${f.vinculo==='pj'?'selected':''}>PJ / Contrato — exige NF + comprovante mensais</option></select>
+      </div>
+    </div>
     <div class="alert info"><b>📋 Documentos exigidos = docs da OBRA + docs da FUNÇÃO</b><div id="previewDocs" style="margin-top:8px;font-size:12px">Selecione função e obra para ver a agregação.</div></div>
     <script>(function(){
       function atualizar(){
@@ -2339,7 +2705,7 @@ function editFuncionario(id){
   `, ()=>{
     const data={nome:val('f_nome'),cpf:val('f_cpf'),funcaoId:parseInt(val('f_funcao'))||null,
       empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true,
-      socio:!!document.getElementById('f_socio')?.checked};
+      socio:!!document.getElementById('f_socio')?.checked, vinculo:val('f_vinculo')||'clt'};
     if(!data.nome||!data.cpf||!data.empresaId||!data.funcaoId){ toast('Preencha todos os campos','err'); return false; }
     const isNovo = !id;
     if(id) Object.assign(f,data); else DB.funcionarios.push({id:uid(),...data});
@@ -2893,7 +3259,7 @@ function renderUsuarios(){
             vinculo = e?e.razao:'-';
           } else if(u.obraIds?.length){
             vinculo = u.obraIds.map(oid=>{const o=DB.obras.find(x=>x.id===oid);return o?.nome;}).filter(Boolean).join(', ');
-          } else vinculo = ['sesmt','coord_sesmt','ti','diretoria','visualizador'].includes(u.tipo)?'Todas as obras':'-';
+          } else vinculo = ['sesmt','coord_sesmt','dp','ti','diretoria','visualizador'].includes(u.tipo)?'Todas as obras':'-';
           return `<tr>
             <td><b>${u.nome}</b>${u.naoApagar?' <span title="Protegido" style="color:var(--bm-orange)">🔒</span>':''}</td><td>${u.email}</td>
             <td><span class="badge-role ${ROLES[u.tipo].badge}">${ROLES[u.tipo].label}</span></td>
@@ -2910,6 +3276,7 @@ const ROLE_LABELS_CRIACAO = {
   ti:'TI (administrador técnico, controle total)',
   sesmt:'SESMT (acesso total)',
   coord_sesmt:'Coordenador SESMT (cria equipe do SESMT)',
+  dp:'Departamento Pessoal (acesso total, foco no FOPAG)',
   coordenador:'Coordenador de Obra (suas obras)',
   engenheiro:'Engenheiro (suas obras)',
   tst:'TST - Téc. Seg. Trabalho (suas obras, pode aprovar)',
@@ -2920,9 +3287,9 @@ const ROLE_LABELS_CRIACAO = {
 function tiposCriaveisUsuario(){
   const t = session.tipo;
   const OPER = ['coordenador','engenheiro','tst','cliente','visualizador','vigia'];
-  if(t==='diretoria'||t==='ti') return ['diretoria','ti','sesmt','coord_sesmt'].concat(OPER);
-  if(t==='coord_sesmt') return ['sesmt','coord_sesmt'].concat(OPER);
-  if(t==='sesmt') return OPER.slice();
+  if(t==='diretoria'||t==='ti') return ['diretoria','ti','sesmt','coord_sesmt','dp'].concat(OPER);
+  if(t==='coord_sesmt') return ['sesmt','coord_sesmt','dp'].concat(OPER);
+  if(t==='sesmt'||t==='dp') return OPER.slice();
   return [];
 }
 function podeGerenciarUsuario(u){
@@ -3337,519 +3704,4 @@ function renderConfig(){
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" onclick="salvarConfig()">💾 Salvar</button>
-      <button class="btn btn-danger" onclick="if(confirm('Zerar todos os dados?')){localStorage.removeItem(STORAGE_KEY);location.reload();}">⚠️ Resetar Sistema</button>
-    </div>
-  `;
-}
-function salvarConfig(){
-  DB.config.smtp={host:val('cf_host'),porta:parseInt(val('cf_porta'))||587,usuario:val('cf_user'),senha:val('cf_pass'),remetente:val('cf_from')};
-  DB.config.diasAvisoVencimento=parseInt(val('cf_dias'))||30;
-  DB.config.iaHabilitada=document.getElementById('cf_ia').checked;
-  DB.config.geminiApiKey=val('cf_gem');
-  DB.config.geminiApiKey2=val('cf_gem2');
-  DB.config.geminiApiKey3=val('cf_gem3');
-  DB.config.geminiModel=val('cf_gemmod')||'gemini-2.5-flash-lite';
-  DB.config.nomeEmpresa=val('cf_nome')||'BRANDÃO & MARMO';
-  DB.config.corPrimaria=val('cf_cor1')||'#1a3d7c';
-  DB.config.corSecundaria=val('cf_cor2')||'#F88800';
-  DB.config.webhookMake=val('cf_webhook');
-  // logo (lê do preview)
-  const prev = document.getElementById('logoPrev');
-  if(prev && prev.src && prev.src.startsWith('data:')) DB.config.logoData = prev.src;
-  aplicarTema();
-  save(); toast('Configurações salvas'); go('config');
-}
-
-function previewLogo(input){
-  const f = input.files[0]; if(!f) return;
-  const r = new FileReader();
-  r.onload = ()=>{
-    const img = document.getElementById('logoPrev');
-    img.src = r.result; img.style.display='block'; img.style.maxHeight='60px';
-    img.style.marginTop='10px'; img.style.padding='6px'; img.style.border='1px solid var(--border)'; img.style.borderRadius='6px';
-  };
-  r.readAsDataURL(f);
-}
-
-function aplicarTema(){
-  document.documentElement.style.setProperty('--bm-blue', DB.config.corPrimaria||'#1a3d7c');
-  var _bmOrange = DB.config.corSecundaria;
-  if(!_bmOrange || _bmOrange.toLowerCase()==='#e8a23a') _bmOrange = '#F88800';
-  document.documentElement.style.setProperty('--bm-orange', _bmOrange);
-}
-
-async function testarWebhook(){
-  const url = val('cf_webhook');
-  const el = document.getElementById('webhookRes');
-  if(!url){ el.innerHTML='<span style="color:var(--crit)">Cole a URL primeiro</span>'; return; }
-  el.innerHTML='⏳ Testando...';
-  try{
-    const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      teste:true, to:'teste@exemplo.com', subject:'Teste do SESMT B&M', html:'<p>Mensagem de teste</p>'
-    })});
-    if(res.ok) el.innerHTML='<span style="color:var(--ok)">✓ Webhook respondeu OK</span>';
-    else el.innerHTML=`<span style="color:var(--crit)">❌ Status ${res.status}</span>`;
-  }catch(e){ el.innerHTML=`<span style="color:var(--crit)">❌ ${e.message}</span>`; }
-}
-
-async function enviarWebhook(payload){
-  if(!DB.config.webhookMake) return false;
-  try{
-    await fetch(DB.config.webhookMake,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    return true;
-  }catch(e){ console.error('webhook',e); return false; }
-}
-
-async function testarGemini(){
-  const key = val('cf_gem');
-  const model = val('cf_gemmod')||'gemini-2.5-flash-lite';
-  const el = document.getElementById('testRes');
-  if(!key){ el.innerHTML = '<span style="color:var(--crit)">Cole a chave primeiro</span>'; return; }
-  el.innerHTML = '⏳ Testando...';
-  try{
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({contents:[{parts:[{text:'Responda apenas "OK" se você está funcionando.'}]}]})
-    });
-    if(!res.ok){
-      const err = await res.text();
-      el.innerHTML = `<span style="color:var(--crit)">❌ Erro ${res.status}: ${err.slice(0,120)}</span>`;
-      return;
-    }
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '(sem resposta)';
-    el.innerHTML = `<span style="color:var(--ok)">✓ Conectado! Modelo respondeu: "${text.trim().slice(0,50)}"</span>`;
-  } catch(e){
-    el.innerHTML = `<span style="color:var(--crit)">❌ ${e.message}</span>`;
-  }
-}
-
-/* ===== DOWNLOAD INDIVIDUAL E EM MASSA ===== */
-async function analisarDocBg(docId){
-  const d = DB.documentos.find(x=>x.id===docId);
-  if(!d || !d.arquivoPath){ toast('Sem arquivo para analisar','warn'); return; }
-  if(DB.config.iaHabilitada===false){ toast('Análise por IA desativada','warn'); return; }
-  d.iaStatus='pendente'; d.iaNota='🤖 Analisando em segundo plano…'; save(); go(currentPage);
-  toast('IA analisando em 2º plano…');
-  try{
-    const {data:blob, error} = await sb.storage.from('documentos').download(d.arquivoPath);
-    if(error || !blob) throw new Error('download');
-    const de = DB.catalogoDocs.find(c=>c.id===d.docId) || {nome:d.docId, exigeData:true};
-    const ctx = contextoRef(d.refTipo, d.refId, d.obraId);
-    const r = await analisarComGemini(blob, de, ctx);
-    const cur = DB.documentos.find(x=>x.id===docId); if(!cur) return;
-    cur.iaStatus=r.iaStatus; cur.iaNota=r.iaNota;
-    if(de.exigeData!==false){ if(r.emissao) cur.emitidoEm=r.emissao; if(de.validadeDias&&r.validade) cur.validade=r.validade; }
-    save(); if(currentPage) go(currentPage);
-    toast('IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
-  }catch(e){ const cur=DB.documentos.find(x=>x.id===docId); if(cur){ cur.iaNota='Falha ao analisar. Tente de novo.'; save(); go(currentPage); } toast('Falha na análise da IA','err'); }
-}
-async function abrirDoc(docId){
-  const d = DB.documentos.find(x=>x.id===docId);
-  if(!d || !d.arquivoPath){ toast('Este documento não tem arquivo para abrir','warn'); return; }
-  const {data, error} = await sb.storage.from('documentos').createSignedUrl(d.arquivoPath, 3600);
-  if(error || !data){ toast('Erro ao abrir: '+((error&&error.message)||'tente novamente'),'err'); return; }
-  window.open(data.signedUrl, '_blank');
-}
-async function baixarDoc(docId){
-  const d = DB.documentos.find(x=>x.id===docId);
-  if(!d||!d.arquivoPath){ toast('Arquivo não disponível','err'); return; }
-  const {data, error} = await sb.storage.from('documentos').createSignedUrl(d.arquivoPath, 3600);
-  if(error){ toast('Erro ao gerar link: '+error.message,'err'); return; }
-  const a = document.createElement('a');
-  a.href = data.signedUrl;
-  a.download = d.arquivo||'documento.pdf';
-  a.target = '_blank';
-  document.body.appendChild(a); a.click(); a.remove();
-}
-
-function safeName(s){ return (s||'').replace(/[\\\/:*?"<>|]/g,'_').replace(/\s+/g,'_').slice(0,80); }
-
-async function baixarZip(docs, nomeZip){
-  if(typeof JSZip==='undefined'){ toast('JSZip não carregou','err'); return; }
-  if(!docs.length){ toast('Nenhum arquivo para baixar','warn'); return; }
-  const validos = docs.filter(d=>d.arquivoPath);
-  if(validos.length===0){ toast('Nenhum arquivo no Storage','warn'); return; }
-  toast(`Baixando ${validos.length} arquivo(s)...`);
-  const zip = new JSZip();
-  let count = 0;
-  for(const d of validos){
-    const exigido = DB.catalogoDocs.find(x=>x.id===d.docId);
-    let pasta = '';
-    if(d.refTipo==='empresa'){
-      const e = DB.empresas.find(x=>x.id===d.refId);
-      const o = d.obraId?DB.obras.find(x=>x.id===d.obraId):null;
-      pasta = `EMPRESAS/${safeName(e?.razao||'?')}${o?'/'+safeName(o.nome):''}`;
-    } else if(d.refTipo==='funcionario'){
-      const f = DB.funcionarios.find(x=>x.id===d.refId);
-      const emp = DB.empresas.find(x=>x.id===f?.empresaId);
-      pasta = `COLABORADORES/${safeName(emp?.razao||'?')}/${safeName(f?.nome||'?')}`;
-    } else {
-      const m = DB.maquinas.find(x=>x.id===d.refId);
-      const emp = DB.empresas.find(x=>x.id===m?.empresaId);
-      pasta = `MAQUINAS/${safeName(emp?.razao||'?')}/${safeName(m?.descricao||'?')}`;
-    }
-    const fileName = `${safeName(exigido?.nome||d.docId)}_${d.arquivo||'doc.pdf'}`;
-    const {data:blob, error} = await sb.storage.from('documentos').download(d.arquivoPath);
-    if(error||!blob){ console.error('download',d.arquivoPath,error); continue; }
-    zip.file(`${pasta}/${fileName}`, blob);
-    count++;
-  }
-  if(count===0){ toast('Falha ao baixar arquivos','err'); return; }
-  toast(`Compactando ${count} arquivo(s)...`);
-  const blob = await zip.generateAsync({type:'blob'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = (nomeZip||'documentos_sesmt')+'.zip';
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
-}
-
-function renderDownloads(){
-  let docs = DB.documentos.filter(d=>d.arquivoPath);
-  // aplicar escopo
-  if(session.tipo==='empresa') docs = docs.filter(d=>{
-    if(d.refTipo==='empresa') return d.refId===session.empresaId;
-    if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.empresaId===session.empresaId; }
-    if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.empresaId===session.empresaId; }
-  });
-  if(['coordenador','engenheiro','tst','cliente'].includes(session.tipo)){
-    docs = docs.filter(d=>{
-      if(d.refTipo==='empresa') return true;
-      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return session.obraIds.includes(f?.obraId); }
-      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return session.obraIds.includes(m?.obraId); }
-    });
-  }
-  // filtros UI
-  if(filtros.obraId){
-    const oid=parseInt(filtros.obraId);
-    docs = docs.filter(d=>{
-      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.obraId===oid; }
-      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.obraId===oid; }
-      if(d.refTipo==='empresa') return (d.obraId||null)===oid;
-    });
-  }
-  if(filtros.empresaId){
-    const eid=parseInt(filtros.empresaId);
-    docs = docs.filter(d=>{
-      if(d.refTipo==='empresa') return d.refId===eid;
-      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); return f?.empresaId===eid; }
-      if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); return m?.empresaId===eid; }
-    });
-  }
-  if(filtros.status==='ok') docs = docs.filter(d=>d.sesmtStatus==='aprovado');
-  else if(filtros.status==='pendente') docs = docs.filter(d=>d.sesmtStatus==='pendente');
-  else if(filtros.status==='crit') docs = docs.filter(d=>d.sesmtStatus==='recusado');
-
-  if(filtros.busca){
-    const q = filtros.busca.toLowerCase();
-    docs = docs.filter(d=>{
-      const cat = DB.catalogoDocs.find(c=>c.id===d.docId);
-      let nome = '';
-      if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); nome=f?.nome||''; }
-      else if(d.refTipo==='empresa'){ const e=DB.empresas.find(x=>x.id===d.refId); nome=e?.razao||''; }
-      else if(d.refTipo==='maquina'){ const m=DB.maquinas.find(x=>x.id===d.refId); nome=m?.descricao||''; }
-      return (nome+' '+(cat?.nome||'')+' '+(d.arquivo||'')).toLowerCase().includes(q);
-    });
-  }
-
-  const nomeZip = filtros.obraId ? `obra_${safeName(DB.obras.find(o=>o.id==filtros.obraId)?.nome||'')}_docs`
-                : filtros.empresaId ? `empresa_${safeName(DB.empresas.find(e=>e.id==filtros.empresaId)?.razao||'')}_docs`
-                : 'documentos_sesmt';
-
-  document.getElementById('main').innerHTML = `
-    <div class="page-header">
-      <div><div class="page-title">Downloads</div><div class="page-sub">Baixe documentos individualmente ou em massa (ZIP)</div></div>
-      <button class="btn btn-primary" onclick='baixarZip(${JSON.stringify(docs.map(d=>d.id))}.map(id=>DB.documentos.find(x=>x.id===id)), "${nomeZip}")'>📦 Baixar ${docs.length} em ZIP</button>
-    </div>
-    ${toolbarFiltros({busca:true,obra:true,empresa:true,status:true})}
-    <div class="card">
-      <table>
-        <thead><tr><th>Tipo</th><th>Vínculo</th><th>Documento</th><th>Arquivo</th><th>Emissão</th><th>Validade</th><th>Status</th><th></th></tr></thead>
-        <tbody>${docs.map(d=>{
-          const exigido = DB.catalogoDocs.find(c=>c.id===d.docId);
-          let vinc = '';
-          if(d.refTipo==='funcionario'){ const f=DB.funcionarios.find(x=>x.id===d.refId); const e=DB.empresas.find(x=>x.id===f?.empresaId); vinc = `👷 ${f?.nome||'?'} (${e?.razao||'?'})`; }
-          else if(d.refTipo==='empresa'){ const e=DB.empresas.find(x=>x.id===d.refId); vinc = `🏢 ${e?.razao||'?'}`; }
-          else { const m=DB.maquinas.find(x=>x.id===d.refId); const e=DB.empresas.find(x=>x.id===m?.empresaId); vinc = `🚜 ${m?.descricao||'?'} (${e?.razao||'?'})`; }
-          return `<tr>
-            <td>${d.refTipo==='empresa'?'Empresa':d.refTipo==='funcionario'?'Colab.':'Máquina'}</td>
-            <td>${vinc}</td>
-            <td>${exigido?.nome||d.docId}</td>
-            <td style="font-size:12px">${d.arquivo||'-'}</td>
-            <td>${d.emitidoEm||'-'}</td>
-            <td>${d.validade||'-'}</td>
-            <td><span class="badge-ia ${d.sesmtStatus==='aprovado'?'aprovado':d.sesmtStatus==='recusado'?'recusado':'pendente'}">${d.sesmtStatus||'-'}</span></td>
-            <td><button class="btn btn-secondary btn-sm" onclick="baixarDoc(${d.id})">⬇️</button></td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table>
-      ${docs.length===0?'<div class="empty"><div class="empty-icon">📂</div>Nenhum arquivo para baixar com esses filtros</div>':''}
-    </div>
-  `;
-}
-
-/* ===== DEVOLUTIVA - MATRIZ POR OBRA ===== */
-function renderDevolutiva(){
-  const obras = escopoObras();
-  if(!filtros.obraId){
-    const _termo = (filtros._buscaObra||'').toLowerCase();
-    const _lista = obras.filter(o=>!_termo || (o.nome||'').toLowerCase().includes(_termo) || (o.clienteNome||'').toLowerCase().includes(_termo) || (o.endereco||'').toLowerCase().includes(_termo));
-    document.getElementById('main').innerHTML = `
-      <div class="page-header">
-        <div><div class="page-title">Devolutiva ao Cliente</div><div class="page-sub">Matriz de conformidade por obra, pronta para enviar</div></div>
-      </div>
-      <div class="card">
-        <h3 style="margin-bottom:10px">Selecione a obra:</h3>
-        <input id="buscaObraDev" placeholder="🔎 Buscar por obra ou cliente..." value="${escapeHtml(filtros._buscaObra||'')}" oninput="filtros._buscaObra=this.value;clearTimeout(window._bod);window._bod=setTimeout(function(){go('devolutiva');},250)" style="width:100%;padding:10px 12px;margin-bottom:14px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
-          ${_lista.length===0?'<div class="empty">Nenhuma obra encontrada</div>':_lista.map(o=>`
-            <button class="btn btn-secondary" style="padding:14px;text-align:left;display:block;width:100%;height:auto;white-space:normal;word-break:break-word" onclick="filtros.obraId='${o.id}';go('devolutiva')">
-              <div style="font-weight:700;color:var(--bm-blue);font-size:15px;white-space:normal">${escapeHtml(o.nome)}${o.ativa===false?' <span style=&quot;font-size:10px;color:#dc2626;font-weight:400&quot;>(arquivada)</span>':''}</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:normal;word-break:break-word">${escapeHtml(o.endereco||'')}</div>
-              <div style="font-size:12px;color:var(--muted);white-space:normal">Cliente: ${escapeHtml(o.clienteNome||'-')}</div>
-            </button>`).join('')}
-        </div>
-      </div>`;
-    return;
-  }
-
-  const obra = DB.obras.find(o=>o.id==filtros.obraId);
-  if(!obra){ filtros.obraId=''; go('devolutiva'); return; }
-  // empresas que atuam na obra
-  const empresasObra = [...new Set([
-    ...DB.funcionarios.filter(f=>f.obraId===obra.id).map(f=>f.empresaId),
-    ...DB.maquinas.filter(m=>m.obraId===obra.id).map(m=>m.empresaId)
-  ])].map(eid=>DB.empresas.find(e=>e.id===eid)).filter(Boolean);
-
-  // colunas empresa (docs da obra para empresa)
-  const colsEmpresa = (obra.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
-
-  // colunas colaborador: união docsFuncionarioBase + todos docs de todas funções dos colab da obra
-  const colabsObra = DB.funcionarios.filter(f=>f.obraId===obra.id);
-  const docsColabSet = new Set(obra.docsFuncionarioBase||[]);
-  colabsObra.forEach(f=>{
-    const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
-    (funcao?.docsIds||[]).forEach(d=>docsColabSet.add(d));
-  });
-  const colsColab = [...docsColabSet].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
-
-  function statusCell(doc, exigencia){
-    const s = statusDoc(doc, exigencia);
-    if(s.cls==='ok') return {txt:'OK', bg:'#16a34a', fg:'#fff'};
-    if(s.cls==='pendente'||s.cls==='warn'||s.cls==='crit'||s.cls==='info') return {txt:'PENDENTE', bg:'#dc2626', fg:'#fff'};
-    return {txt:'-', bg:'#9ca3af', fg:'#fff'};
-  }
-
-  // status final
-  let temPendencia = false;
-  empresasObra.forEach(e=>colsEmpresa.forEach(de=>{ const d=getDoc('empresa',e.id,de.id,obra.id); if(!d||statusDoc(d,de).cls!=='ok') temPendencia=true; }));
-  colabsObra.forEach(f=>{
-    const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
-    colsColab.forEach(de=>{
-      if(!exigidos.has(de.id)) return;
-      const doc = getDoc('funcionario',f.id,de.id);
-      if(!doc||statusDoc(doc,de).cls!=='ok') temPendencia=true;
-    });
-  });
-
-  document.getElementById('main').innerHTML = `
-    <div class="page-header">
-      <div>
-        <div class="page-title">Devolutiva: ${obra.nome}</div>
-        <div class="page-sub">Cliente: ${obra.clienteNome||'-'} • ${empresasObra.length} empresa(s) • ${colabsObra.length} colaborador(es)</div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary" onclick="filtros.obraId='';go('devolutiva')">← Trocar obra</button>
-        <button class="btn btn-secondary" onclick="window.print()">🖨️ Imprimir</button>
-        <button class="btn btn-secondary" onclick="exportarDevolutivaCSV()">⬇️ CSV</button>
-        <button class="btn btn-primary" onclick="enviarDevolutiva(${obra.id})">✉️ Enviar ao cliente</button>
-      </div>
-    </div>
-
-    <div id="devolutivaEl" style="background:#fff;padding:24px;border-radius:8px;box-shadow:var(--shadow);overflow-x:auto">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:2px solid var(--bm-blue);padding-bottom:10px">
-        <div>
-          <div style="font-size:22px;font-weight:700;color:var(--bm-blue)">BRANDÃO<span style="color:var(--bm-orange)">&MARMO</span></div>
-          <div style="font-size:11px;color:var(--muted);letter-spacing:2px">ENGENHARIA E CONSTRUÇÕES</div>
-        </div>
-        <div style="text-align:center;flex:1">
-          <h2 style="margin:0;font-size:18px">DEVOLUTIVA DOCUMENTAÇÃO — ${obra.nome.toUpperCase()}</h2>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px">Emitido em ${new Date().toLocaleDateString('pt-BR')}</div>
-        </div>
-        <div style="background:var(--ok);color:#fff;padding:8px 16px;border-radius:50%;font-weight:700;font-size:11px;text-align:center;line-height:1.2">SEGURANÇA<br>DO TRABALHO</div>
-      </div>
-
-      ${empresasObra.length===0?'<div class="empty">Nenhuma empresa atuando nesta obra</div>':`
-        <h3 style="margin:14px 0 8px;color:var(--bm-blue);font-size:14px">EMPRESA</h3>
-        <table style="font-size:11px">
-          <thead><tr><th style="background:var(--bm-blue);color:#fff">Empresa</th>${colsEmpresa.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
-          <tbody>${empresasObra.map(e=>`<tr>
-            <td><b>${e.razao}</b></td>
-            ${colsEmpresa.map(de=>{ const c=statusCell(getDoc('empresa',e.id,de.id,obra.id),de); return `<td style="background:${c.bg};color:${c.fg};text-align:center;font-weight:700">${c.txt}</td>`; }).join('')}
-          </tr>`).join('')}</tbody>
-        </table>
-      `}
-
-      ${colabsObra.length===0?'':`
-        <h3 style="margin:20px 0 8px;color:var(--bm-blue);font-size:14px">COLABORADORES</h3>
-        <table style="font-size:11px">
-          <thead><tr><th style="background:var(--bm-blue);color:#fff">Colaborador</th>${colsColab.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
-          <tbody>${colabsObra.map(f=>{
-            const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
-            const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
-            return `<tr>
-              <td><b>${f.nome}</b><div style="font-size:10px;color:var(--muted)">${funcao?.nome||''}</div></td>
-              ${colsColab.map(de=>{
-                if(!exigidos.has(de.id)) return '<td style="background:#9ca3af;color:#fff;text-align:center;font-weight:700">N/A</td>';
-                const c = statusCell(getDoc('funcionario',f.id,de.id),de);
-                return `<td style="background:${c.bg};color:${c.fg};text-align:center;font-weight:700">${c.txt}</td>`;
-              }).join('')}
-            </tr>`;
-          }).join('')}</tbody>
-        </table>
-      `}
-
-      <div style="margin-top:24px;padding:12px;background:${temPendencia?'#fee2e2':'#dcfce7'};border-radius:6px;text-align:center;font-weight:700;font-size:16px;color:${temPendencia?'#991b1b':'#166534'}">
-        STATUS FINAL: ${temPendencia?'PENDENTE':'OK - CONFORME'}
-      </div>
-    </div>
-  `;
-}
-
-function exportarDevolutivaCSV(){
-  const rows = [];
-  document.querySelectorAll('#devolutivaEl table').forEach((tbl,ti)=>{
-    rows.push([ti===0?'EMPRESA':'COLABORADORES']);
-    [...tbl.querySelectorAll('tr')].forEach(tr=>rows.push([...tr.children].map(td=>td.innerText.replace(/\n/g,' ').trim())));
-    rows.push([]);
-  });
-  const csv = rows.map(r=>r.map(c=>`"${(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='devolutiva.csv'; a.click();
-}
-
-function enviarDevolutiva(obraId){
-  const obra = DB.obras.find(o=>o.id===obraId);
-  const dest = destinatariosObra(obraId);
-  const para = prompt('E-mail principal do cliente (Para):', '');
-  if(para===null) return;
-  const todos = [para,...dest.cc].filter(Boolean);
-  DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:todos.join('; '),assunto:`[B&M] Devolutiva Documentação - ${obra.nome}`,itens:1,enviadoPor:session.nome});
-  save();
-  toast(`Devolutiva enviada para ${todos.length} destinatário(s)`);
-}
-
-/* ===== UTILS ===== */
-function val(id){ const el=document.getElementById(id); return el?el.value.trim():''; }
-function atualizarDropLabel(input){
-  const lbl = document.getElementById('dropLabel');
-  if(lbl && input.files[0]) lbl.innerHTML = `<b style="color:var(--bm-blue)">✓ ${input.files[0].name}</b><br><span style="font-size:11px">${(input.files[0].size/1024).toFixed(0)} KB</span>`;
-}
-// drag-drop global
-document.addEventListener('dragover',e=>{
-  const dz = document.getElementById('dropZone');
-  if(!dz) return;
-  e.preventDefault(); dz.style.borderColor='var(--bm-blue)'; dz.style.background='#eef2f9';
-});
-document.addEventListener('dragleave',e=>{
-  const dz = document.getElementById('dropZone');
-  if(dz){ dz.style.borderColor='var(--border)'; dz.style.background='#f9fafb'; }
-});
-document.addEventListener('drop',e=>{
-  const dz = document.getElementById('dropZone');
-  if(!dz) return;
-  e.preventDefault();
-  dz.style.borderColor='var(--border)'; dz.style.background='#f9fafb';
-  const arq = document.getElementById('f_arq');
-  const f = e.dataTransfer?.files?.[0];
-  if(f && f.type==='application/pdf' && arq){
-    const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files;
-    atualizarDropLabel(arq);
-  } else if(f && /(pdf|image)/.test(f.type)){ const dt = new DataTransfer(); dt.items.add(f); arq.files = dt.files; atualizarDropLabel(arq);} else if(f) toast('Apenas PDF ou imagem aceito','err');
-});
-function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
-let modalSaveFn=null, modalExtras=[];
-function showModal(title,body,saveFn,extras=[],readOnly=false,size=''){
-  document.getElementById('modalTitle').textContent=title;
-  document.getElementById('modalBody').innerHTML=body;
-  document.getElementById('modalEl').className='modal '+(size||'');
-  modalSaveFn=saveFn; modalExtras=extras;
-  let html=extras.map((b,i)=>`<button class="btn ${b.cls||'btn-secondary'}" onclick="modalExtra(${i})">${b.label}</button>`).join('');
-  html+=`<button class="btn btn-secondary" onclick="closeModal()">${readOnly?'Fechar':'Cancelar'}</button>`;
-  if(!readOnly && saveFn) html+=`<button class="btn btn-primary" onclick="modalSave()">Salvar</button>`;
-  document.getElementById('modalFooter').innerHTML=html;
-  document.getElementById('modal').classList.add('show');
-}
-function modalExtra(i){ modalExtras[i]?.fn(); }
-async function modalSave(){
-  if(!modalSaveFn) return;
-  const btns = document.querySelectorAll('#modalFooter .btn');
-  btns.forEach(b=>b.disabled=true);
-  try{
-    const result = await Promise.resolve(modalSaveFn());
-    if(result!==false) closeModal();
-  } finally {
-    btns.forEach(b=>b.disabled=false);
-  }
-}
-function closeModal(){ document.getElementById('modal').classList.remove('show'); modalSaveFn=null; _docsModalRef=null; }
-function toast(msg,type){const t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
-
-/* ===== WHATSAPP (fire-and-forget via Edge Function) ===== */
-async function notificarWhatsApp(evento, dados){
-  try{
-    await sb.functions.invoke('notificar-whatsapp', {body:{evento, dados}});
-  }catch(e){ console.warn('whatsapp',e); }
-}
-
-/* ===== AUTO-UPDATE (substitui o Ctrl+Shift+R) ===== */
-const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content || '?';
-try{ const _fv=document.getElementById('footerVer'); if(_fv)_fv.textContent=APP_VERSION; const _lv=document.getElementById('loginVer'); if(_lv)_lv.textContent='v'+APP_VERSION; }catch(e){}
-let _versaoNova = null;
-
-async function checarAtualizacao(){
-  try{
-    const r = await fetch(window.location.pathname + '?cb=' + Date.now(), {cache:'no-store'});
-    if(!r.ok) return;
-    const html = await r.text();
-    const m = html.match(/<meta\s+name=["']app-version["']\s+content=["']([^"']+)["']/i);
-    if(!m) return;
-    const remota = m[1];
-    if(remota !== APP_VERSION){
-      _versaoNova = remota;
-      document.getElementById('updateBar').style.display = 'block';
-    }
-  }catch(e){}
-}
-
-function aplicarAtualizacao(){
-  if('caches' in window){
-    caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{});
-  }
-  window.location.href = window.location.pathname + '?v=' + (_versaoNova||Date.now());
-}
-
-setTimeout(checarAtualizacao, 3000);
-setInterval(checarAtualizacao, 5*60*1000);
-window.addEventListener('focus', checarAtualizacao);
-
-/* ===== INIT ===== */
-load();
-aplicarTema();
-restaurarSessao();
-(function setupLoginLogo(){
-  let branding = null;
-  try{ branding = JSON.parse(localStorage.getItem('bm_branding')||'null'); }catch(e){}
-  const lg = document.querySelector('#loginScreen .logo');
-  if(!lg) return;
-  if(branding && branding.logoData){
-    lg.innerHTML = `<img src="${branding.logoData}" style="max-height:90px;margin-bottom:10px" alt="${branding.nomeEmpresa||''}"><div style="font-size:18px;font-weight:700;color:var(--bm-blue);margin-top:6px">${branding.nomeEmpresa||''}</div><div style="font-size:11px;color:var(--bm-blue);letter-spacing:3px;margin-top:4px;font-weight:600;opacity:.7">ENGENHARIA E CONSTRUÇÕES</div>`;
-  } else if(branding && branding.nomeEmpresa && branding.nomeEmpresa!=='BRANDÃO & MARMO'){
-    const lgName = lg.querySelector('.logo-name');
-    if(lgName) lgName.textContent = branding.nomeEmpresa;
-  }
-})();
-</script>
-</body>
-</html>
+      <button class="btn btn-danger" onclick="if(confirm('Zerar todos os dados?')){localStorage.removeItem(STORAGE_KEY);location
