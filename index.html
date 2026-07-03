@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.06.23.3">
+<meta name="app-version" content="2026.07.03.1">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -395,7 +395,7 @@ async function loadFromSupabase(){
     const emObras = {}; (eo.data||[]).forEach(r=>{(emObras[r.empresa_id]=emObras[r.empresa_id]||[]).push(r.obra_id);});
     DB.empresas = (em.data||[]).map(e=>({id:e.id,cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel,email:e.email,telefone:e.telefone,obraIds:emObras[e.id]||[]}));
     DB.obras = (ob.data||[]).map(o=>({id:o.id,nome:o.nome,endereco:o.endereco,ativa:o.ativa,clienteNome:o.cliente_nome,destinatariosExtras:o.destinatarios_extras,coordenadorId:o.coordenador_id,engenheiroId:o.engenheiro_id,tstId:o.tst_id,sesmtId:o.sesmt_id,docsEmpresa:o.docs_empresa||[],docsFuncionarioBase:o.docs_funcionario_base||[],docsMaquina:o.docs_maquina||[],whatsappGrupo:o.whatsapp_grupo}));
-    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
+    DB.funcionarios = (fu.data||[]).map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,socio:f.socio_proprietario===true,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
     DB.maquinas = (mq.data||[]).map(m=>({id:m.id,empresaId:m.empresa_id,obraId:m.obra_id,descricao:m.descricao,patrimonio:m.patrimonio}));
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
@@ -448,7 +448,7 @@ async function syncToSupabase(){
     }
   }
   for(const f of DB.funcionarios){
-    const row = {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false,cracha_enviado_em:f.crachaEnviadoEm||null};
+    const row = {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false,socio_proprietario:f.socio===true,cracha_enviado_em:f.crachaEnviadoEm||null};
     if(typeof f.id==='number' && f.id<1e9){
       await sb.from('funcionarios').upsert({id:f.id,...row});
     } else {
@@ -1155,7 +1155,7 @@ async function processarCodigo(txt){
 async function recarregarFuncionarios(){
   try{
     const {data} = await sb.from('funcionarios').select('*');
-    if(data) DB.funcionarios = data.map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
+    if(data) DB.funcionarios = data.map(f=>({id:f.id,empresaId:f.empresa_id,obraId:f.obra_id,nome:f.nome,cpf:f.cpf,funcaoId:f.funcao_id,ativo:f.ativo,socio:f.socio_proprietario===true,qrToken:f.qr_token,crachaEnviadoEm:f.cracha_enviado_em}));
   }catch(e){}
 }
 function registrarEntradaManual(id){
@@ -1488,12 +1488,11 @@ async function enviarPendenciasWhatsApp(empresaId){
   if(!emp.telefone){ toast('Empresa sem telefone cadastrado para WhatsApp','warn'); return; }
   if(!confirm('Enviar '+pend.length+' pendencia(s) de '+emp.razao+' pelo WhatsApp ('+emp.telefone+')?')) return;
   toast('Enviando pendencias no WhatsApp...');
-  const lista = pend.map(function(p){ return {tipo:p.cat, nomeRef:p.ref, docNome:p.doc, status:p.status, validade:''}; });
   try{
-    const {data, error} = await sb.functions.invoke('notificar-whatsapp', {body:{evento:'resumo_diario', dados:{empresaId:emp.id, pendencias:lista}}});
+    // mesma função do resumo diário: gera o PDF (tabela do e-mail) e envia como anexo
+    const {data, error} = await sb.functions.invoke('pendencias-diarias', {body:{canal:'whatsapp', empresaId:emp.id}});
     if(error) throw error;
-    if(data && data.sent===false){ toast('WhatsApp falhou. Confira telefone, sessao da Evolution e numero conectado.','err'); return; }
-    if(data && data.skipped){ toast('Sem telefone valido para enviar.','warn'); return; }
+    if(data && !data.whats){ toast('WhatsApp falhou. Confira telefone, sessao da Evolution e numero conectado.','err'); return; }
     DB.logs.push({data:new Date().toLocaleString('pt-BR'), para:emp.telefone, assunto:'[WhatsApp] Pendencias - '+emp.razao, itens:pend.length, enviadoPor:session.nome, via:'whatsapp'});
     save();
     toast('Pendencias enviadas no WhatsApp');
@@ -1545,11 +1544,16 @@ function docsExigidosEmpresa(empresa, obraId){
   obras.forEach(o=>(o.docsEmpresa||[]).forEach(d=>ids.add(d)));
   return [...ids].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
 }
+// Docs dispensados para sócio proprietário (match por nome, tolerante)
+const RE_DISPENSA_SOCIO = /ficha\s*cadastral|dados\s*contratuais/i;
+function docDispensadoSocio(nome){ return RE_DISPENSA_SOCIO.test(nome||''); }
 function docsExigidosFuncionario(func){
   const obra = DB.obras.find(o=>o.id===func.obraId);
   const funcao = DB.catalogoFuncoes.find(f=>f.id==func.funcaoId);
   const ids = new Set([...(obra?.docsFuncionarioBase||[]), ...(funcao?.docsIds||[])]);
-  return [...ids].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+  let docs = [...ids].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
+  if(func.socio) docs = docs.filter(d=>!docDispensadoSocio(d.nome));
+  return docs;
 }
 function docsExigidosMaquina(maq){
   const obra = DB.obras.find(o=>o.id===maq.obraId);
@@ -2310,6 +2314,7 @@ function editFuncionario(id){
     <div class="form-group"><label>Obra</label>
       <select id="f_obra"><option value="">--</option>${obras.filter(o=>o.ativa).map(o=>`<option value="${o.id}" ${f.obraId===o.id?'selected':''}>${o.nome}</option>`).join('')}</select>
     </div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="f_socio" ${f.socio?'checked':''} style="width:auto"> Sócio Proprietário <span style="font-size:11px;color:var(--gray,#6b7280)">(dispensa Ficha Cadastral e Dados Contratuais)</span></label></div>
     <div class="alert info"><b>📋 Documentos exigidos = docs da OBRA + docs da FUNÇÃO</b><div id="previewDocs" style="margin-top:8px;font-size:12px">Selecione função e obra para ver a agregação.</div></div>
     <script>(function(){
       function atualizar(){
@@ -2317,20 +2322,24 @@ function editFuncionario(id){
         const oid=parseInt(document.getElementById('f_obra')?.value)||null;
         const obra=DB.obras.find(o=>o.id===oid);
         const funcao=DB.catalogoFuncoes.find(c=>c.id===fid);
+        const socio=document.getElementById('f_socio')?.checked;
         const docsObra=new Set(obra?.docsFuncionarioBase||[]);
         const docsFunc=new Set(funcao?.docsIds||[]);
-        const todos=new Set([...docsObra,...docsFunc]);
+        let todos=new Set([...docsObra,...docsFunc]);
         const docNomes=id=>DB.catalogoDocs.find(d=>d.id===id)?.nome||id;
+        let dispensados=[];
+        if(socio){ dispensados=[...todos].filter(function(id){return docDispensadoSocio(docNomes(id));}); todos=new Set([...todos].filter(function(id){return !docDispensadoSocio(docNomes(id));})); }
         const p=document.getElementById('previewDocs');
         if(!p) return;
         if(!fid||!oid){ p.innerHTML='Selecione função e obra para ver a agregação.'; return; }
-        p.innerHTML='<b>'+todos.size+' documentos exigidos</b> ('+docsObra.size+' da obra + '+docsFunc.size+' da função, com sobreposição):<div style="margin-top:6px">'+[...todos].map(function(id){var obraT=docsObra.has(id),funcT=docsFunc.has(id);var tag=obraT&&funcT?'OBRA+FUNC':obraT?'OBRA':'FUNC';return '<span class="pill" title="'+(obraT?'Obra ':'')+(funcT?'Função':'')+'">['+tag+'] '+docNomes(id)+'</span>';}).join('')+'</div>';
+        p.innerHTML='<b>'+todos.size+' documentos exigidos</b> ('+docsObra.size+' da obra + '+docsFunc.size+' da função, com sobreposição):<div style="margin-top:6px">'+[...todos].map(function(id){var obraT=docsObra.has(id),funcT=docsFunc.has(id);var tag=obraT&&funcT?'OBRA+FUNC':obraT?'OBRA':'FUNC';return '<span class="pill" title="'+(obraT?'Obra ':'')+(funcT?'Função':'')+'">['+tag+'] '+docNomes(id)+'</span>';}).join('')+'</div>'+(dispensados.length?'<div style="margin-top:6px;color:#b45309"><b>Dispensados (sócio proprietário):</b> '+dispensados.map(docNomes).join(', ')+'</div>':'');
       }
-      setTimeout(()=>{document.getElementById('f_funcao')?.addEventListener('change',atualizar);document.getElementById('f_obra')?.addEventListener('change',atualizar);atualizar();},50);
+      setTimeout(()=>{document.getElementById('f_funcao')?.addEventListener('change',atualizar);document.getElementById('f_obra')?.addEventListener('change',atualizar);document.getElementById('f_socio')?.addEventListener('change',atualizar);atualizar();},50);
     })();<\/script>
   `, ()=>{
     const data={nome:val('f_nome'),cpf:val('f_cpf'),funcaoId:parseInt(val('f_funcao'))||null,
-      empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true};
+      empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true,
+      socio:!!document.getElementById('f_socio')?.checked};
     if(!data.nome||!data.cpf||!data.empresaId||!data.funcaoId){ toast('Preencha todos os campos','err'); return false; }
     const isNovo = !id;
     if(id) Object.assign(f,data); else DB.funcionarios.push({id:uid(),...data});
@@ -3636,8 +3645,7 @@ function renderDevolutiva(){
   let temPendencia = false;
   empresasObra.forEach(e=>colsEmpresa.forEach(de=>{ const d=getDoc('empresa',e.id,de.id,obra.id); if(!d||statusDoc(d,de).cls!=='ok') temPendencia=true; }));
   colabsObra.forEach(f=>{
-    const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
-    const exigidos = new Set([...(obra.docsFuncionarioBase||[]),...(funcao?.docsIds||[])]);
+    const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
     colsColab.forEach(de=>{
       if(!exigidos.has(de.id)) return;
       const doc = getDoc('funcionario',f.id,de.id);
@@ -3689,7 +3697,7 @@ function renderDevolutiva(){
           <thead><tr><th style="background:var(--bm-blue);color:#fff">Colaborador</th>${colsColab.map(c=>`<th style="background:var(--bm-blue);color:#fff;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:8px 4px">${c.nome}</th>`).join('')}</tr></thead>
           <tbody>${colabsObra.map(f=>{
             const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
-            const exigidos = new Set([...(obra.docsFuncionarioBase||[]),...(funcao?.docsIds||[])]);
+            const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
             return `<tr>
               <td><b>${f.nome}</b><div style="font-size:10px;color:var(--muted)">${funcao?.nome||''}</div></td>
               ${colsColab.map(de=>{
