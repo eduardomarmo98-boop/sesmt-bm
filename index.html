@@ -2,22 +2,22 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>FOPAG e SESMT — B&M</title>
+<title>SESMT e FOPAG — B&M</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <!-- evita que o navegador guarde HTML em cache "para sempre" -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.03.3">
+<meta name="app-version" content="2026.07.06.1">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="SESMT">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" href="icon-192.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png?v=20260706">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260706">
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -271,8 +271,8 @@
 <!-- LOGIN -->
 <div id="loginScreen">
   <div class="login-box">
-    <div class="login-badge"><img src="icon-192.png" alt="SESMT" class="login-icon"></div>
-    <div class="login-tag">Sistema <b>FOPAG e SESMT</b><br>Documentação, Segurança e Saúde no Trabalho</div>
+    <div class="login-badge"><img src="icon-192.png?v=20260706" alt="SESMT e FOPAG" class="login-icon"></div>
+    <div class="login-tag">Sistema <b>SESMT e FOPAG</b><br>Documentação, Segurança e Saúde no Trabalho</div>
     <div class="login-feats">
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 7h6M9 11h6M9 15h4"></path></svg>Documentação</span>
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"></path><path d="M4 12h16"></path></svg>Portaria QR</span>
@@ -312,7 +312,7 @@
   </div>
   <div class="footer" id="footer">
     <div id="footerLogo"></div>
-    <div>FOPAG e SESMT • Controle de Documentação • <span id="footerYear"></span> • <b>v<span id="footerVer"></span></b></div>
+    <div>SESMT e FOPAG • Controle de Documentação • <span id="footerYear"></span> • <b>v<span id="footerVer"></span></b></div>
   </div>
 </div>
 
@@ -588,12 +588,32 @@ function _seedDESATIVADO(){
 // Perfis que EXIGEM 2FA TOTP
 const TIPOS_MFA_OBRIGATORIO = ['diretoria','ti','sesmt','coord_sesmt','dp','tst'];
 
+// Bloqueio de tentativas: 5 senhas erradas -> trava 5 min (por e-mail, neste navegador)
+const LOGIN_MAX_TENTATIVAS = 5, LOGIN_BLOQUEIO_MS = 5*60*1000;
+function _loginLock(e){ try{ return JSON.parse(localStorage.getItem('bm_lock_'+e)||'{}'); }catch(_){ return {}; } }
+function _loginLockSet(e,v){ try{ localStorage.setItem('bm_lock_'+e, JSON.stringify(v)); }catch(_){} }
 async function doLogin(){
   const e = document.getElementById('loginUser').value.trim().toLowerCase();
   const p = document.getElementById('loginPass').value;
+  const lk = _loginLock(e);
+  if(lk.until && Date.now() < lk.until){
+    const min = Math.ceil((lk.until-Date.now())/60000);
+    toast(`Muitas tentativas. Aguarde ${min} min ou use "Esqueci minha senha".`,'err'); return;
+  }
   toast('Entrando...');
   const {data:auth, error} = await sb.auth.signInWithPassword({email:e, password:p});
-  if(error){ toast('E-mail ou senha inválidos','err'); return; }
+  if(error){
+    const n = (lk.until ? 0 : (lk.n||0)) + 1;
+    if(n >= LOGIN_MAX_TENTATIVAS){
+      _loginLockSet(e,{n:0, until:Date.now()+LOGIN_BLOQUEIO_MS});
+      toast('5 tentativas erradas — login bloqueado por 5 minutos.','err');
+    } else {
+      _loginLockSet(e,{n});
+      toast(`E-mail ou senha inválidos (tentativa ${n} de ${LOGIN_MAX_TENTATIVAS})`,'err');
+    }
+    return;
+  }
+  try{ localStorage.removeItem('bm_lock_'+e); }catch(_){}
   const {data:perfil, error:errP} = await sb.from('usuarios').select('*').eq('id', auth.user.id).maybeSingle();
   if(errP || !perfil){ toast('Conta sem perfil. Contate o admin.','err'); await sb.auth.signOut(); return; }
   const perfilTmp = {id:perfil.id, email:perfil.email, nome:perfil.nome, tipo:perfil.tipo, empresaId:perfil.empresa_id, obraIds:perfil.obra_ids||[], naoApagar:perfil.nao_apagar};
@@ -1146,7 +1166,8 @@ function fopagRowHtml(item, row, eid, oid, funcId, funcNome){
     podeEnv?`<button class="btn btn-primary btn-sm" onclick="fopagUpload(${eid},${oid},'${item.id}',${funcId||'null'})">${row&&row.arquivoPath?'↺ Reenviar':'📤 Enviar'}</button>`:'',
     row&&row.arquivoPath?`<button class="btn btn-secondary btn-sm" onclick="fopagAbrirArq('${row.arquivoPath}')">👁️ Abrir</button>`:'',
     row&&row.arquivoPath&&podeApr&&row.sesmtStatus!=='aprovado'?`<button class="btn btn-secondary btn-sm" onclick="fopagAprovar(${row.id})">✅ Aprovar</button>`:'',
-    row&&row.arquivoPath&&podeApr&&row.sesmtStatus!=='recusado'?`<button class="btn btn-danger btn-sm" onclick="fopagRecusar(${row.id})">✖ Recusar</button>`:''
+    row&&row.arquivoPath&&podeApr&&row.sesmtStatus!=='recusado'?`<button class="btn btn-danger btn-sm" onclick="fopagRecusar(${row.id})">✖ Recusar</button>`:'',
+    row&&row.arquivoPath&&(podeApr||(podeEnv&&row.sesmtStatus!=='aprovado'))?`<button class="btn btn-danger btn-sm" onclick="fopagExcluir(${row.id})" title="Excluir o arquivo enviado">🗑</button>`:''
   ].filter(Boolean).join(' ');
   return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
     <div style="flex:1;min-width:240px">
@@ -1369,6 +1390,15 @@ function editFopagCatItem(id){
     if(error){ toast('Não foi possível excluir (há documentos vinculados). Desative o item. '+error.message,'err'); return; }
     await loadFopag(); closeModal(); go('fopag_catalogo'); toast('Item excluído');
   }}]:[]);
+}
+async function fopagExcluir(id){
+  const r = DB.fopagDocs.find(x=>x.id===id); if(!r) return;
+  if(!confirm('Excluir este documento enviado? O item volta a "NÃO ENVIADO".')) return;
+  if(r.arquivoPath) sb.storage.from('documentos').remove([r.arquivoPath]).catch(()=>{});
+  const {error} = await sb.from('fopag_documentos').delete().eq('id', id);
+  if(error){ toast('Erro ao excluir: '+error.message,'err'); return; }
+  DB.fopagDocs = DB.fopagDocs.filter(x=>x.id!==id);
+  toast('Documento excluído'); renderFopagDetalhe();
 }
 async function fopagAbrirArq(path){
   const {data,error} = await sb.storage.from('documentos').createSignedUrl(path, 3600);
@@ -1904,7 +1934,7 @@ function docsExigidosEmpresa(empresa, obraId){
   return [...ids].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
 }
 // Docs dispensados para sócio proprietário (match por nome, tolerante)
-const RE_DISPENSA_SOCIO = /ficha\s*cadastral|dados\s*contratuais/i;
+const RE_DISPENSA_SOCIO = /ficha\s*(de\s*)?registro|dados\s*contratuais/i;
 function docDispensadoSocio(nome){ return RE_DISPENSA_SOCIO.test(nome||''); }
 function docsExigidosFuncionario(func){
   const obra = DB.obras.find(o=>o.id===func.obraId);
@@ -2676,7 +2706,7 @@ function editFuncionario(id){
       <select id="f_obra"><option value="">--</option>${obras.filter(o=>o.ativa).map(o=>`<option value="${o.id}" ${f.obraId===o.id?'selected':''}>${o.nome}</option>`).join('')}</select>
     </div>
     <div class="grid-2">
-      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:26px"><input type="checkbox" id="f_socio" ${f.socio?'checked':''} style="width:auto"> Sócio Proprietário <span style="font-size:11px;color:var(--gray,#6b7280)">(dispensa Ficha Cadastral e Dados Contratuais)</span></label></div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:26px"><input type="checkbox" id="f_socio" ${f.socio?'checked':''} style="width:auto"> Sócio Proprietário <span style="font-size:11px;color:var(--gray,#6b7280)">(dispensa Ficha de Registro e Dados Contratuais)</span></label></div>
       <div class="form-group"><label>Vínculo (FOPAG mensal)</label>
         <select id="f_vinculo"><option value="clt" ${(f.vinculo||'clt')==='clt'?'selected':''}>CLT — registrado em carteira</option><option value="pj" ${f.vinculo==='pj'?'selected':''}>PJ / Contrato — exige NF + comprovante mensais</option></select>
       </div>
@@ -4002,6 +4032,7 @@ function renderDevolutiva(){
   const colsColab = [...docsColabSet].map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
 
   function statusCell(doc, exigencia){
+    if(doc && doc.sesmtStatus==='recusado') return {txt:'REJEITADO', bg:'#c2410c', fg:'#fff'};
     const s = statusDoc(doc, exigencia);
     if(s.cls==='ok') return {txt:'OK', bg:'#16a34a', fg:'#fff'};
     if(s.cls==='pendente'||s.cls==='warn'||s.cls==='crit'||s.cls==='info') return {txt:'PENDENTE', bg:'#dc2626', fg:'#fff'};
