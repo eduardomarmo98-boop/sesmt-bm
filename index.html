@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.08.2">
+<meta name="app-version" content="2026.07.08.3">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -374,6 +374,37 @@ function load(){
     config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
 }
 
+/* ===== SYNC DIFERENCIAL =====
+   Fotografia (_snap) do que está no Supabase. O syncToSupabase só envia
+   linhas cujo payload mudou desde a última foto — antes ele reenviava o
+   banco INTEIRO a cada save() (252 mil UPDATEs inúteis em 2 meses). */
+let _snap = {};
+function _snapSet(t,id,row){ _snap[t+':'+id] = JSON.stringify(row); }
+function _snapDiff(t,id,row){ return _snap[t+':'+id] !== JSON.stringify(row); }
+/* payloads enviados ao Supabase — usados pelo sync E pela fotografia (manter iguais!) */
+function _rowCfg(c){ return {id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'}; }
+function _rowCatDoc(d){ return {id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||'',exige_data:d.exigeData!==false}; }
+function _rowFuncao(f){ return {id:f.id,nome:f.nome,docs_ids:f.docsIds||[]}; }
+function _rowObra(o){ return {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null,cno:o.cno||''}; }
+function _rowEmpresa(e){ return {cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel||'',email:e.email,telefone:e.telefone||''}; }
+function _rowFuncionario(f){ return {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false,socio_proprietario:f.socio===true,vinculo:f.vinculo||'clt',cracha_enviado_em:f.crachaEnviadoEm||null}; }
+function _rowMaquina(m){ return {empresa_id:m.empresaId,obra_id:m.obraId||null,descricao:m.descricao,patrimonio:m.patrimonio||''}; }
+function _rowDocumento(d){ return {ref_tipo:d.refTipo,ref_id:d.refId,obra_id:d.obraId||null,doc_id:d.docId,arquivo:d.arquivo||'',arquivo_path:d.arquivoPath||'',emitido_em:d.emitidoEm||null,validade:d.validade||null,ia_status:d.iaStatus||'pendente',ia_nota:d.iaNota||'',sesmt_status:d.sesmtStatus||'pendente',sesmt_motivo:d.sesmtMotivo||'',sesmt_por:d.sesmtPor||null}; }
+function _idReal(x){ return typeof x==='number' && x<1e9; }
+function _fotografarDB(){
+  _snap = {};
+  try{
+    if(DB.config) _snapSet('cfg',1,_rowCfg(DB.config));
+    (DB.catalogoDocs||[]).forEach(d=>_snapSet('cd',d.id,_rowCatDoc(d)));
+    (DB.catalogoFuncoes||[]).forEach(f=>{ if(_idReal(f.id)) _snapSet('cf',f.id,_rowFuncao(f)); });
+    (DB.obras||[]).forEach(o=>{ if(_idReal(o.id)) _snapSet('ob',o.id,_rowObra(o)); });
+    (DB.empresas||[]).forEach(e=>{ if(_idReal(e.id)){ _snapSet('em',e.id,_rowEmpresa(e)); _snapSet('eo',e.id,(e.obraIds||[]).slice().sort()); } });
+    (DB.funcionarios||[]).forEach(f=>{ if(_idReal(f.id)) _snapSet('fu',f.id,_rowFuncionario(f)); });
+    (DB.maquinas||[]).forEach(m=>{ if(_idReal(m.id)) _snapSet('mq',m.id,_rowMaquina(m)); });
+    (DB.documentos||[]).forEach(d=>{ if(_idReal(d.id)) _snapSet('doc',d.id,_rowDocumento(d)); });
+  }catch(e){ console.error('fotografarDB',e); _snap={}; }
+}
+
 async function loadFromSupabase(){
   try{
     const [us,cd,cf,em,ob,eo,fu,mq,dc,cfg,lg,ac] = await Promise.all([
@@ -407,72 +438,82 @@ async function loadFromSupabase(){
     }
     DB.logs = (lg.data||[]).map(l=>({data:new Date(l.data).toLocaleString('pt-BR'),para:l.para,cc:l.cc,assunto:l.assunto,itens:l.itens,enviadoPor:l.enviado_por,via:l.via}));
     DB.acessos = ((ac && ac.data) ? ac.data : []).map(a=>({id:a.id,funcionarioId:a.funcionario_id,obraId:a.obra_id,tipo:a.tipo,momento:a.momento,status:a.status_no_momento,detalhe:a.detalhe,registradoPor:a.registrado_por}));
+    _fotografarDB(); // base do sync diferencial: o que acabou de vir do banco
     localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
   }catch(e){ console.error('loadFromSupabase',e); toast('Erro ao carregar dados: '+(e.message||e),'err'); }
 }
 
 async function syncToSupabase(){
   if(!session) return;
-  const c = DB.config;
-  await sb.from('config').upsert({id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'});
-  if(DB.catalogoDocs.length){
-    await sb.from('catalogo_documentos').upsert(DB.catalogoDocs.map(d=>({id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||'',exige_data:d.exigeData!==false})));
+  // SYNC DIFERENCIAL: compara com a fotografia (_snap) e só envia o que mudou de verdade.
+  if(!Object.keys(_snap).length) _fotografarDB(); // segurança: nunca sincronizar sem base
+  const cfgRow = _rowCfg(DB.config);
+  if(_snapDiff('cfg',1,cfgRow)){ await sb.from('config').upsert(cfgRow); _snapSet('cfg',1,cfgRow); }
+  const cdMud = (DB.catalogoDocs||[]).map(_rowCatDoc).filter(r=>_snapDiff('cd',r.id,r));
+  if(cdMud.length){
+    await sb.from('catalogo_documentos').upsert(cdMud);
+    cdMud.forEach(r=>_snapSet('cd',r.id,r));
   }
   for(const f of DB.catalogoFuncoes){
-    if(typeof f.id==='number' && f.id<1e9){
-      await sb.from('catalogo_funcoes').upsert({id:f.id,nome:f.nome,docs_ids:f.docsIds||[]});
+    if(_idReal(f.id)){
+      const r = _rowFuncao(f);
+      if(_snapDiff('cf',f.id,r)){ await sb.from('catalogo_funcoes').upsert(r); _snapSet('cf',f.id,r); }
     } else {
       const {data} = await sb.from('catalogo_funcoes').insert({nome:f.nome,docs_ids:f.docsIds||[]}).select().single();
-      if(data) f.id = data.id;
+      if(data){ f.id = data.id; _snapSet('cf',f.id,_rowFuncao(f)); }
     }
   }
   for(const o of DB.obras){
-    const row = {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null,cno:o.cno||''};
-    if(typeof o.id==='number' && o.id<1e9){
-      await sb.from('obras').upsert({id:o.id,...row});
+    const row = _rowObra(o);
+    if(_idReal(o.id)){
+      if(_snapDiff('ob',o.id,row)){ await sb.from('obras').upsert({id:o.id,...row}); _snapSet('ob',o.id,row); }
     } else {
       const {data} = await sb.from('obras').insert(row).select().single();
-      if(data) o.id = data.id;
+      if(data){ o.id = data.id; _snapSet('ob',o.id,row); }
     }
   }
   for(const e of DB.empresas){
-    const row = {cnpj:e.cnpj,razao:e.razao,responsavel:e.responsavel||'',email:e.email,telefone:e.telefone||''};
-    if(typeof e.id==='number' && e.id<1e9){
-      await sb.from('empresas').upsert({id:e.id,...row});
+    const row = _rowEmpresa(e);
+    if(_idReal(e.id)){
+      if(_snapDiff('em',e.id,row)){ await sb.from('empresas').upsert({id:e.id,...row}); _snapSet('em',e.id,row); }
     } else {
       const {data} = await sb.from('empresas').insert(row).select().single();
-      if(data) e.id = data.id;
+      if(data){ e.id = data.id; _snapSet('em',e.id,row); }
     }
-    await sb.from('empresa_obras').delete().eq('empresa_id',e.id);
-    if((e.obraIds||[]).length){
-      await sb.from('empresa_obras').insert(e.obraIds.map(oid=>({empresa_id:e.id,obra_id:oid})));
+    const eoRow = (e.obraIds||[]).slice().sort();
+    if(_snapDiff('eo',e.id,eoRow)){
+      await sb.from('empresa_obras').delete().eq('empresa_id',e.id);
+      if(eoRow.length){
+        await sb.from('empresa_obras').insert(eoRow.map(oid=>({empresa_id:e.id,obra_id:oid})));
+      }
+      _snapSet('eo',e.id,eoRow);
     }
   }
   for(const f of DB.funcionarios){
-    const row = {empresa_id:f.empresaId,obra_id:f.obraId||null,nome:f.nome,cpf:f.cpf,funcao_id:f.funcaoId||null,ativo:f.ativo!==false,socio_proprietario:f.socio===true,vinculo:f.vinculo||'clt',cracha_enviado_em:f.crachaEnviadoEm||null};
-    if(typeof f.id==='number' && f.id<1e9){
-      await sb.from('funcionarios').upsert({id:f.id,...row});
+    const row = _rowFuncionario(f);
+    if(_idReal(f.id)){
+      if(_snapDiff('fu',f.id,row)){ await sb.from('funcionarios').upsert({id:f.id,...row}); _snapSet('fu',f.id,row); }
     } else {
       const {data} = await sb.from('funcionarios').insert(row).select().single();
-      if(data){ f.id = data.id; f.qrToken = data.qr_token; }
+      if(data){ f.id = data.id; f.qrToken = data.qr_token; _snapSet('fu',f.id,row); }
     }
   }
   for(const m of DB.maquinas){
-    const row = {empresa_id:m.empresaId,obra_id:m.obraId||null,descricao:m.descricao,patrimonio:m.patrimonio||''};
-    if(typeof m.id==='number' && m.id<1e9){
-      await sb.from('maquinas').upsert({id:m.id,...row});
+    const row = _rowMaquina(m);
+    if(_idReal(m.id)){
+      if(_snapDiff('mq',m.id,row)){ await sb.from('maquinas').upsert({id:m.id,...row}); _snapSet('mq',m.id,row); }
     } else {
       const {data} = await sb.from('maquinas').insert(row).select().single();
-      if(data) m.id = data.id;
+      if(data){ m.id = data.id; _snapSet('mq',m.id,row); }
     }
   }
   for(const d of DB.documentos){
-    const row = {ref_tipo:d.refTipo,ref_id:d.refId,obra_id:d.obraId||null,doc_id:d.docId,arquivo:d.arquivo||'',arquivo_path:d.arquivoPath||'',emitido_em:d.emitidoEm||null,validade:d.validade||null,ia_status:d.iaStatus||'pendente',ia_nota:d.iaNota||'',sesmt_status:d.sesmtStatus||'pendente',sesmt_motivo:d.sesmtMotivo||'',sesmt_por:d.sesmtPor||null};
-    if(typeof d.id==='number' && d.id<1e9){
-      await sb.from('documentos').upsert({id:d.id,...row});
+    const row = _rowDocumento(d);
+    if(_idReal(d.id)){
+      if(_snapDiff('doc',d.id,row)){ await sb.from('documentos').upsert({id:d.id,...row}); _snapSet('doc',d.id,row); }
     } else {
       const {data} = await sb.from('documentos').insert(row).select().single();
-      if(data) d.id = data.id;
+      if(data){ d.id = data.id; _snapSet('doc',d.id,row); }
     }
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
@@ -728,11 +769,12 @@ function _refDeDocsModal(){
 function _aplicarMudancaDoc(payload){
   try{
     const n=payload.new, o=payload.old;
-    if(payload.eventType==='DELETE'){ DB.documentos=DB.documentos.filter(d=>d.id!==(o&&o.id)); }
+    if(payload.eventType==='DELETE'){ DB.documentos=DB.documentos.filter(d=>d.id!==(o&&o.id)); if(o&&o.id!=null) delete _snap['doc:'+o.id]; }
     else if(n){
       const doc={id:n.id,refTipo:n.ref_tipo,refId:n.ref_id,obraId:n.obra_id,docId:n.doc_id,arquivo:n.arquivo,arquivoPath:n.arquivo_path,arquivoData:'',emitidoEm:n.emitido_em,validade:n.validade,iaStatus:n.ia_status,iaNota:n.ia_nota,sesmtStatus:n.sesmt_status,sesmtMotivo:n.sesmt_motivo,sesmtPor:n.sesmt_por};
       const i=DB.documentos.findIndex(d=>d.id===n.id);
       if(i>=0) DB.documentos[i]=doc; else DB.documentos.push(doc);
+      _snapSet('doc',doc.id,_rowDocumento(doc)); // mudança veio do servidor: já está sincronizada
     }
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }catch(e){}
     const modalAberto = document.getElementById('modal').classList.contains('show');
