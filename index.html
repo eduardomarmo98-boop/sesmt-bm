@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.06.1">
+<meta name="app-version" content="2026.07.08.1">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -297,7 +297,7 @@
   <div class="topbar">
     <div class="topbar-left">
       <button class="hamb" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
-      <div class="logo"><div class="logo-name">B&M <span style="font-size:13px;font-weight:400;color:var(--muted)">| SESMT</span></div></div>
+      <div class="logo"><div class="logo-name">B&M <span style="font-size:13px;font-weight:400;color:var(--muted)">| SESMT e FOPAG</span></div></div>
     </div>
     <div class="user-info">
       <span><b id="topUser">—</b> <span class="badge-role sesmt" id="topRole">SESMT</span></span>
@@ -1836,8 +1836,16 @@ function corpoEmailCracha(d){
     '<div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:10px">Mensagem automática • Brandão &amp; Marmo Engenharia • SESMT</div>'+
   '</div>';
 }
-async function enviarCrachaColaborador(func){
+const _crachaEnviando = new Set(); // trava anti-duplicidade (clique duplo / aprovações em sequência)
+async function enviarCrachaColaborador(func, force){
+  if(_crachaEnviando.has(func.id)) return;
+  _crachaEnviando.add(func.id);
   try{
+    // confere no BANCO (dado fresco) se já foi enviado — evita reenvio por reaprovação ou aparelho desatualizado
+    try{
+      const {data:fdb} = await sb.from('funcionarios').select('cracha_enviado_em').eq('id', func.id).maybeSingle();
+      if(fdb && fdb.cracha_enviado_em){ func.crachaEnviadoEm = fdb.cracha_enviado_em; if(!force) return; }
+    }catch(e){}
     const emp = DB.empresas.find(e=>e.id===func.empresaId);
     if(!emp || !emp.email) return;
     const png = await gerarCrachaPNG(func);
@@ -1851,8 +1859,15 @@ async function enviarCrachaColaborador(func){
       obra:obraNome, funcao:funcao?funcao.nome:'', assunto:assunto, html:htmlCracha,
       arquivoNome:'cracha_'+safeName(func.nome||'colaborador')+'.png', pngBase64:(png&&png.indexOf(',')>=0?png.split(',')[1]:png)
     }});
-    if(ok){ toast('Cracha enviado a empresa por e-mail'); try{ func.crachaEnviadoEm = new Date().toISOString(); save(); }catch(e){} }
+    if(ok){
+      toast('Cracha enviado a empresa por e-mail');
+      func.crachaEnviadoEm = new Date().toISOString();
+      // grava DIRETO no banco (não espera o sync geral) — fecha a janela de duplicidade
+      try{ await sb.from('funcionarios').update({cracha_enviado_em:func.crachaEnviadoEm}).eq('id', func.id); }catch(e){}
+      try{ save(); }catch(e){}
+    }
   }catch(e){ console.error('cracha email', e); }
+  finally{ _crachaEnviando.delete(func.id); }
 }
 async function enviarCrachaManual(id){
   const f = DB.funcionarios.find(x=>x.id===id);
@@ -1864,7 +1879,7 @@ async function enviarCrachaManual(id){
   const aviso = temPend ? '\n\nATENCAO: este colaborador ainda tem pendencias. O envio ficara registrado no historico como "enviado COM pendencia".' : '';
   if(!confirm('Enviar o cracha de '+(f.nome||'')+' para '+emp.email+'?'+aviso)) return;
   toast('Gerando e enviando o cracha...');
-  await enviarCrachaColaborador(f);
+  await enviarCrachaColaborador(f, true); // manual pode reenviar mesmo já enviado
   DB.logs.push({data:new Date().toLocaleString('pt-BR'), para:emp.email, assunto:'Crachá enviado'+(temPend?' (COM pendência)':'')+' - '+(f.nome||''), itens:1, enviadoPor:session.nome, via:temPend?'cracha-pendente':'cracha-manual'});
   save();
 }
@@ -3135,7 +3150,7 @@ function aprovarDoc(docId){
   if(d.refTipo==='funcionario'){ _func=DB.funcionarios.find(f=>f.id===d.refId); if(_func){ const s0=calcStatus('funcionario',_func); _antesOK=(s0.crit===0&&s0.pend===0&&s0.aguard===0); } }
   d.sesmtStatus = 'aprovado'; d.sesmtPor = session.id; d.sesmtMotivo = '';
   save(); toast('Documento aprovado'); closeModal(); go(currentPage);
-  if(_func){ const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0); if(_agoraOK && !_antesOK){ enviarCrachaColaborador(_func); const _e=DB.empresas.find(e=>e.id===_func.empresaId); DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:(_e&&_e.email)||'',assunto:'Crachá enviado (automático) - '+(_func.nome||''),itens:1,enviadoPor:'sistema',via:'cracha-auto'}); save(); } }
+  if(_func){ const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0); if(_agoraOK && !_antesOK && !_func.crachaEnviadoEm){ enviarCrachaColaborador(_func); const _e=DB.empresas.find(e=>e.id===_func.empresaId); DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:(_e&&_e.email)||'',assunto:'Crachá enviado (automático) - '+(_func.nome||''),itens:1,enviadoPor:'sistema',via:'cracha-auto'}); save(); } }
 }
 function recusarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
