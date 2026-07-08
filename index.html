@@ -649,9 +649,9 @@ async function entrarNaApp(){
   // logo / nome no topbar
   const logoEl = document.querySelector('.topbar .logo .logo-name');
   if(DB.config.logoData){
-    logoEl.innerHTML = `<img src="${DB.config.logoData}" style="max-height:34px;vertical-align:middle"> <span style="font-size:13px;font-weight:400;color:var(--muted);margin-left:8px">| SESMT</span>`;
+    logoEl.innerHTML = `<img src="${DB.config.logoData}" style="max-height:34px;vertical-align:middle"> <span style="font-size:13px;font-weight:400;color:var(--muted);margin-left:8px">| SESMT e FOPAG</span>`;
   } else {
-    logoEl.innerHTML = `${DB.config.nomeEmpresa||'B&M'} <span style="font-size:13px;font-weight:400;color:var(--muted)">| SESMT</span>`;
+    logoEl.innerHTML = `${DB.config.nomeEmpresa||'B&M'} <span style="font-size:13px;font-weight:400;color:var(--muted)">| SESMT e FOPAG</span>`;
   }
   aplicarTema();
   // logo no rodapé
@@ -1700,13 +1700,29 @@ function imprimirEfetivo(){
     '</style></head><body>'+
     '<div class="bar"><div><div class="bm">BRANDÃO<span>&amp;MARMO</span></div><div class="sub">Engenharia e Construções</div></div>'+
     '<div style="text-align:right"><h1>EFETIVO DO DIA</h1><div class="sub">'+escH(obraNome)+' • '+escH(diaBR)+'</div></div></div>'+
-    '<div class="stats"><div><b>'+dentro.length+'</b>Dentro agora</div><div><b>'+entraram.size+'</b>Entraram no dia</div><div><b>'+acc.length+'</b>Movimentos</div></div>';
-  html += '<h3>Dentro agora ('+dentro.length+')</h3><table><thead><tr><th>Colaborador</th><th>Função</th><th>Empresa</th></tr></thead><tbody>'+
-    (dentro.map(fid=>'<tr><td>'+escH(nomeFunc(fid))+'</td><td>'+escH(funcaoFunc(fid))+'</td><td>'+escH(empFunc(fid))+'</td></tr>').join('')||'<tr><td colspan="3">Ninguém dentro</td></tr>')+'</tbody></table>';
-  html += '<h3>Por empresa (entraram)</h3><table><thead><tr><th>Empresa</th><th>Qtd</th></tr></thead><tbody>'+
-    (Object.keys(porEmp).map(e=>'<tr><td>'+escH(e)+'</td><td>'+porEmp[e]+'</td></tr>').join('')||'<tr><td colspan="2">-</td></tr>')+'</tbody></table>';
-  html += '<h3>Movimentos do dia</h3><table><thead><tr><th>Hora</th><th>Colaborador</th><th>Empresa</th><th>Tipo</th><th>Situação</th></tr></thead><tbody>'+
-    (acc.slice().reverse().map(a=>'<tr><td>'+new Date(a.momento).toLocaleTimeString('pt-BR')+'</td><td>'+escH(nomeFunc(a.funcionarioId))+'</td><td>'+escH(empFunc(a.funcionarioId))+'</td><td>'+(a.tipo==='entrada'?'Entrada':'Saída')+'</td><td>'+(a.status==='pendencia'?'Pendência':'OK')+'</td></tr>').join('')||'<tr><td colspan="5">Nenhum movimento</td></tr>')+'</tbody></table>';
+    '<div class="stats"><div><b>'+entraram.size+'</b>Total presente no dia</div></div>';
+  // Quantitativo por obra -> empresa -> função (sem movimentos de entrada/saída)
+  const grupos = {}; // obra -> empresa -> funcao -> qtd
+  entraram.forEach(fid=>{
+    const evs = porFunc[fid];
+    const o = DB.obras.find(x=>String(x.id)===String(evs[0].obraId));
+    const ob = o?o.nome:'-';
+    const e = empFunc(fid), fn = funcaoFunc(fid);
+    grupos[ob] = grupos[ob]||{}; grupos[ob][e] = grupos[ob][e]||{};
+    grupos[ob][e][fn] = (grupos[ob][e][fn]||0)+1;
+  });
+  Object.keys(grupos).sort().forEach(ob=>{
+    let totObra = 0; Object.keys(grupos[ob]).forEach(e=>Object.keys(grupos[ob][e]).forEach(fn=>totObra+=grupos[ob][e][fn]));
+    html += '<h3>'+escH(ob)+' — total '+totObra+'</h3><table><thead><tr><th>Empresa</th><th>Função</th><th style="width:60px">Qtd</th></tr></thead><tbody>';
+    Object.keys(grupos[ob]).sort().forEach(e=>{
+      const fns = grupos[ob][e];
+      const totEmp = Object.keys(fns).reduce((s,fn)=>s+fns[fn],0);
+      html += '<tr style="background:#eef2f9;font-weight:700"><td>'+escH(e)+'</td><td></td><td>'+totEmp+'</td></tr>';
+      Object.keys(fns).sort().forEach(fn=>{ html += '<tr><td></td><td>'+escH(fn)+'</td><td>'+fns[fn]+'</td></tr>'; });
+    });
+    html += '</tbody></table>';
+  });
+  if(!entraram.size) html += '<p style="font-size:12px">Sem movimento registrado neste dia.</p>';
   html += '<div style="margin-top:20px;font-size:11px;color:#666">Emitido em '+new Date().toLocaleString('pt-BR')+' por '+escH(session.nome||'')+'</div></body></html>';
   const w = window.open('','_blank','width=900,height=700');
   if(!w){ toast('Permita pop-ups para imprimir','warn'); return; }
