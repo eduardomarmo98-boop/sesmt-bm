@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.08.3">
+<meta name="app-version" content="2026.07.08.5">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -371,7 +371,7 @@ function save(){
 }
 function load(){
   DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],fopagCatalogo:[],fopagDocs:[],
-    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
+    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,autoAprovarIA:false,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
 }
 
 /* ===== SYNC DIFERENCIAL =====
@@ -382,7 +382,7 @@ let _snap = {};
 function _snapSet(t,id,row){ _snap[t+':'+id] = JSON.stringify(row); }
 function _snapDiff(t,id,row){ return _snap[t+':'+id] !== JSON.stringify(row); }
 /* payloads enviados ao Supabase — usados pelo sync E pela fotografia (manter iguais!) */
-function _rowCfg(c){ return {id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'}; }
+function _rowCfg(c){ return {id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, auto_aprovar_ia:c.autoAprovarIA===true, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'}; }
 function _rowCatDoc(d){ return {id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||'',exige_data:d.exigeData!==false}; }
 function _rowFuncao(f){ return {id:f.id,nome:f.nome,docs_ids:f.docsIds||[]}; }
 function _rowObra(o){ return {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null,cno:o.cno||''}; }
@@ -432,7 +432,7 @@ async function loadFromSupabase(){
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
       const c = cfg.data;
-      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,geminiApiKey:c.gemini_api_key||'',geminiApiKey2:c.gemini_api_key_2||'',geminiApiKey3:c.gemini_api_key_3||'',geminiModel:c.gemini_model||'gemini-2.5-flash-lite',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
+      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,autoAprovarIA:c.auto_aprovar_ia===true,geminiApiKey:c.gemini_api_key||'',geminiApiKey2:c.gemini_api_key_2||'',geminiApiKey3:c.gemini_api_key_3||'',geminiModel:c.gemini_model||'gemini-2.5-flash-lite',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
       // cache da marca para a tela de login (acessível antes do auth)
       try{ localStorage.setItem('bm_branding', JSON.stringify({logoData:DB.config.logoData,nomeEmpresa:DB.config.nomeEmpresa,corPrimaria:DB.config.corPrimaria,corSecundaria:DB.config.corSecundaria})); }catch(e){}
     }
@@ -610,6 +610,7 @@ function _seedDESATIVADO(){
       smtp:{host:'',porta:587,usuario:'',senha:'',remetente:'sesmt@brandaoemarmo.com.br'},
       diasAvisoVencimento:30,
       iaHabilitada:true,
+      autoAprovarIA:false,
       geminiApiKey:'',
       geminiApiKey2:'',
       geminiApiKey3:'',
@@ -1345,7 +1346,7 @@ async function fopagIA(row, file, item, pj){
     }
     let st='pendente', nota='';
     if(falhou){
-      nota = falhou.status===429 ? 'Cota diária da IA esgotada. Reenvie/reanalise mais tarde ou avalie manualmente.'
+      nota = falhou.status===429 ? 'Limite da IA atingido (por minuto ou do dia). Reanalise em 1-2 minutos ou avalie manualmente.'
            : 'IA indisponível agora. Avalie manualmente ou reenvie o arquivo.';
     } else {
       const cleaned = text.replace(/```json|```/g,'').trim();
@@ -1361,10 +1362,15 @@ async function fopagIA(row, file, item, pj){
              + (p.recomendacao?'\nComo corrigir: '+p.recomendacao:'');
       }
     }
-    await sb.from('fopag_documentos').update({ia_status:st, ia_nota:nota, atualizado_em:new Date().toISOString()}).eq('id', row.id);
-    const local = DB.fopagDocs.find(r=>r.id===row.id); if(local){ local.iaStatus=st; local.iaNota=nota; }
+    const local = DB.fopagDocs.find(r=>r.id===row.id);
+    const auto = DB.config.autoAprovarIA===true && st==='aprovado' && (!local || local.sesmtStatus==='pendente');
+    if(auto) nota += '\n✅ Aprovado automaticamente (auto-aprovação por IA ligada nas Configurações).';
+    const upd = {ia_status:st, ia_nota:nota, atualizado_em:new Date().toISOString()};
+    if(auto){ upd.sesmt_status='aprovado'; upd.sesmt_motivo=''; }
+    await sb.from('fopag_documentos').update(upd).eq('id', row.id);
+    if(local){ local.iaStatus=st; local.iaNota=nota; if(auto){ local.sesmtStatus='aprovado'; local.sesmtMotivo=''; } }
     if(currentPage==='fopag' && _fopag.view==='detalhe') renderFopagDetalhe();
-    toast('IA FOPAG: '+st, st==='recusado'?'err':st==='duvida'?'warn':'');
+    toast(auto?'IA FOPAG: aprovado (aprovação automática)':'IA FOPAG: '+st, st==='recusado'?'err':st==='duvida'?'warn':'');
   }catch(e){ console.warn('fopagIA', e); }
 }
 
@@ -2108,22 +2114,24 @@ function _geminiKeys(){
   return [DB.config.geminiApiKey, DB.config.geminiApiKey2, DB.config.geminiApiKey3]
     .map(k=>(k||'').trim()).filter(Boolean);
 }
+let _gemRR = 0; // revezamento: cada análise começa numa chave diferente (espalha o limite POR MINUTO entre os projetos)
 async function _geminiDireto(base64, mimeType, prompt){
   const modelo = DB.config.geminiModel||'gemini-2.5-flash-lite';
   const keys = _geminiKeys();
   if(!keys.length) return {ok:false, status:0};
   let last = {ok:false, status:0};
-  // 1) modelo escolhido, rotacionando as chaves. Se a chave i estourar a cota diária
-  //    (429) ou falhar/voltar vazia, cai SOZINHO na próxima chave (outro projeto/cota).
+  const off = (_gemRR++) % keys.length;
+  // 1) modelo escolhido, revezando as chaves. Se a chave estourar a cota (429)
+  //    ou falhar/voltar vazia, cai SOZINHO na próxima chave (outro projeto/cota).
   for(let i=0;i<keys.length;i++){
-    const r = await _geminiCall(modelo, keys[i], base64, mimeType, prompt, 2);
+    const r = await _geminiCall(modelo, keys[(off+i)%keys.length], base64, mimeType, prompt, 2);
     if(r.ok && r.text && r.text.trim()) return r;
     last = r;
   }
   // 2) último recurso: gemini-2.5-flash (cota própria, mais robusto) nas mesmas chaves
   if(modelo!=='gemini-2.5-flash'){
     for(let i=0;i<keys.length;i++){
-      const r = await _geminiCall('gemini-2.5-flash', keys[i], base64, mimeType, prompt, 1);
+      const r = await _geminiCall('gemini-2.5-flash', keys[(off+i)%keys.length], base64, mimeType, prompt, 1);
       if(r.ok && r.text && r.text.trim()) return r;
       last = r;
     }
@@ -2223,8 +2231,8 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
     if(falhou){
       const cota = falhou.status===429;
       const ocupado = [500,503].includes(falhou.status);
-      return {iaStatus:'pendente', iaNota: cota
-        ? 'Cota diária da IA esgotada em TODAS as chaves configuradas (plano gratuito do Google). Renova à meia-noite no Pacífico (~4h-5h da manhã no Brasil). Para mais capacidade: adicione outra chave (projeto Google novo) em Configurações, ou ative o faturamento. Por enquanto, avalie manualmente.'
+      return {iaStatus:'pendente', _cota:cota, iaNota: cota
+        ? 'Limite da IA atingido (por minuto ou do dia). Aguarde 1-2 minutos e clique em "🤖 Analisar". Se persistir, a cota gratuita do dia esgotou (renova ~4h-5h da manhã no Brasil) — avalie manualmente ou tente amanhã.'
         : ocupado ? 'IA ocupada no momento. Clique em "🤖 Analisar" de novo em alguns segundos.'
         : 'Não foi possível analisar agora. Clique em "🤖 Analisar" de novo ou avalie manualmente.'};
     }
@@ -3056,8 +3064,9 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
         const d = getDoc(_k.tipo,_k.refId,_k.docId,_k.obraId); if(!d) return;
         d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
         if(!_semData){ if(r.emissao) d.emitidoEm=r.emissao; if(_vd && r.validade) d.validade=r.validade; }
+        _autoAprovaIA(d);
         save(); if(currentPage) go(currentPage);
-        toast('IA: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
+        toast(d.sesmtStatus==='aprovado'?'IA: aprovado (aprovação automática)':'IA: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
       })();
     } else { toast('Documento enviado.'); }
     return true;
@@ -3180,16 +3189,35 @@ async function salvarMassa(){
   if(analisarIA && pendentes.length){
     const ctx = contextoRef(tipo, refId, obraId);
     (async()=>{
+      let cotaSeguidas=0, paradosEm=-1;
       for(let j=0;j<pendentes.length;j++){
         const p=pendentes[j];
-        if(j>0) await new Promise(r=>setTimeout(r,700));
-        const r = await analisarComGemini(p.arq, p.de, ctx);
+        // ritmo seguro: ~13/min (o Google limita ~15/min POR PROJETO no plano grátis)
+        if(j>0) await new Promise(r=>setTimeout(r,4500));
+        let r = await analisarComGemini(p.arq, p.de, ctx);
+        if(r._cota){ // estourou o limite por MINUTO: espera 1 min e tenta de novo sozinho
+          toast('IA: limite por minuto atingido — aguardando 1 min pra continuar…','warn');
+          await new Promise(res=>setTimeout(res,65000));
+          r = await analisarComGemini(p.arq, p.de, ctx);
+        }
+        cotaSeguidas = r._cota ? cotaSeguidas+1 : 0;
         const d = getDoc(tipo,refId,p.docId,obraId); if(!d) continue;
         d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
         if(p.de.exigeData!==false){ if(r.emissao) d.emitidoEm=r.emissao; if(p.de.validadeDias&&r.validade) d.validade=r.validade; }
+        _autoAprovaIA(d);
         save(); if(currentPage) go(currentPage);
+        if(cotaSeguidas>=2){ paradosEm=j+1; break; } // 2 cotas seguidas mesmo após esperar = cota do DIA esgotou; para de insistir
       }
-      toast('IA concluiu a análise dos arquivos.');
+      if(paradosEm>=0){
+        for(let j=paradosEm;j<pendentes.length;j++){
+          const d=getDoc(tipo,refId,pendentes[j].docId,obraId);
+          if(d && d.iaStatus==='pendente' && /Analisando/i.test(d.iaNota||'')) d.iaNota='Cota do dia da IA esgotada. Use o botão "🤖 Analisar" amanhã ou avalie manualmente.';
+        }
+        save(); if(currentPage) go(currentPage);
+        toast('Cota do dia da IA esgotada — os documentos restantes ficaram para depois.','warn');
+      } else {
+        toast('IA concluiu a análise dos arquivos.');
+      }
     })();
   }
   return true;
@@ -3202,13 +3230,28 @@ async function excluirDoc(docId){
   DB.documentos = DB.documentos.filter(d=>d.id!==docId);
   save(); toast('Documento excluído'); closeModal(); go(currentPage);
 }
+/* Crachá automático quando o colaborador fica 100% OK (usado na aprovação manual E na auto-aprovação por IA) */
+function _checaCrachaAuto(_func,_antesOK){
+  if(!_func) return;
+  const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0);
+  if(_agoraOK && !_antesOK && !_func.crachaEnviadoEm){ enviarCrachaColaborador(_func); const _e=DB.empresas.find(e=>e.id===_func.empresaId); DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:(_e&&_e.email)||'',assunto:'Crachá enviado (automático) - '+(_func.nome||''),itens:1,enviadoPor:'sistema',via:'cracha-auto'}); save(); }
+}
+/* Auto-aprovação: se ligada nas Configurações e a IA aprovou, o doc já entra APROVADO (sem passar pelo SESMT) */
+function _autoAprovaIA(d){
+  if(DB.config.autoAprovarIA!==true || !d || d.iaStatus!=='aprovado' || d.sesmtStatus!=='pendente') return;
+  let _func=null, _antesOK=false;
+  if(d.refTipo==='funcionario'){ _func=DB.funcionarios.find(f=>f.id===d.refId); if(_func){ const s0=calcStatus('funcionario',_func); _antesOK=(s0.crit===0&&s0.pend===0&&s0.aguard===0); } }
+  d.sesmtStatus='aprovado'; d.sesmtPor=null; d.sesmtMotivo='';
+  d.iaNota=(d.iaNota||'')+'\n✅ Aprovado automaticamente (auto-aprovação por IA ligada nas Configurações).';
+  _checaCrachaAuto(_func,_antesOK);
+}
 function aprovarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
   let _func=null, _antesOK=false;
   if(d.refTipo==='funcionario'){ _func=DB.funcionarios.find(f=>f.id===d.refId); if(_func){ const s0=calcStatus('funcionario',_func); _antesOK=(s0.crit===0&&s0.pend===0&&s0.aguard===0); } }
   d.sesmtStatus = 'aprovado'; d.sesmtPor = session.id; d.sesmtMotivo = '';
   save(); toast('Documento aprovado'); closeModal(); go(currentPage);
-  if(_func){ const s1=calcStatus('funcionario',_func); const _agoraOK=(s1.crit===0&&s1.pend===0&&s1.aguard===0); if(_agoraOK && !_antesOK && !_func.crachaEnviadoEm){ enviarCrachaColaborador(_func); const _e=DB.empresas.find(e=>e.id===_func.empresaId); DB.logs.push({data:new Date().toLocaleString('pt-BR'),para:(_e&&_e.email)||'',assunto:'Crachá enviado (automático) - '+(_func.nome||''),itens:1,enviadoPor:'sistema',via:'cracha-auto'}); save(); } }
+  _checaCrachaAuto(_func,_antesOK);
 }
 function recusarDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
@@ -3793,6 +3836,7 @@ function renderConfig(){
         <b>Gemini é gratuito</b> (~1.500 análises/dia por chave). <b>Dica:</b> crie 2-3 chaves em <u>projetos Google diferentes</u> em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--bm-blue)">aistudio.google.com/app/apikey</a> e cole abaixo — cada chave tem cota grátis própria e o sistema <b>troca sozinho</b> quando uma estoura o limite do dia.
       </div>
       <div class="form-group"><label><input type="checkbox" id="cf_ia" ${c.iaHabilitada?'checked':''} style="width:auto"> Habilitar análise por IA ao enviar documentos</label></div>
+      <div class="form-group"><label><input type="checkbox" id="cf_ia_auto" ${c.autoAprovarIA?'checked':''} style="width:auto"> <b>Aprovar automaticamente</b> quando a IA aprovar (o documento entra como APROVADO sem revisão do SESMT — vale para documentos SESMT e FOPAG; recusas e dúvidas continuam indo para revisão)</label></div>
       <div class="form-group"><label>Chave da API Gemini (principal)</label><input id="cf_gem" type="password" value="${c.geminiApiKey||''}" placeholder="AIzaSy..."></div>
       <div class="form-group"><label>Chave reserva 2 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem2" type="password" value="${c.geminiApiKey2||''}" placeholder="AIzaSy..."></div>
       <div class="form-group"><label>Chave reserva 3 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem3" type="password" value="${c.geminiApiKey3||''}" placeholder="AIzaSy..."></div>
@@ -3815,6 +3859,7 @@ function salvarConfig(){
   DB.config.smtp={host:val('cf_host'),porta:parseInt(val('cf_porta'))||587,usuario:val('cf_user'),senha:val('cf_pass'),remetente:val('cf_from')};
   DB.config.diasAvisoVencimento=parseInt(val('cf_dias'))||30;
   DB.config.iaHabilitada=document.getElementById('cf_ia').checked;
+  DB.config.autoAprovarIA=document.getElementById('cf_ia_auto').checked;
   DB.config.geminiApiKey=val('cf_gem');
   DB.config.geminiApiKey2=val('cf_gem2');
   DB.config.geminiApiKey3=val('cf_gem3');
@@ -3910,8 +3955,9 @@ async function analisarDocBg(docId){
     const cur = DB.documentos.find(x=>x.id===docId); if(!cur) return;
     cur.iaStatus=r.iaStatus; cur.iaNota=r.iaNota;
     if(de.exigeData!==false){ if(r.emissao) cur.emitidoEm=r.emissao; if(de.validadeDias&&r.validade) cur.validade=r.validade; }
+    _autoAprovaIA(cur);
     save(); if(currentPage) go(currentPage);
-    toast('IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
+    toast(cur.sesmtStatus==='aprovado'&&cur.sesmtPor===null?'IA: aprovado (aprovação automática)':'IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
   }catch(e){ const cur=DB.documentos.find(x=>x.id===docId); if(cur){ cur.iaNota='Falha ao analisar. Tente de novo.'; save(); go(currentPage); } toast('Falha na análise da IA','err'); }
 }
 async function abrirDoc(docId){
