@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.08.5">
+<meta name="app-version" content="2026.07.08.7">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -635,6 +635,12 @@ const LOGIN_MAX_TENTATIVAS = 5, LOGIN_BLOQUEIO_MS = 5*60*1000;
 function _loginLock(e){ try{ return JSON.parse(localStorage.getItem('bm_lock_'+e)||'{}'); }catch(_){ return {}; } }
 function _loginLockSet(e,v){ try{ localStorage.setItem('bm_lock_'+e, JSON.stringify(v)); }catch(_){} }
 async function doLogin(){
+  // trava: Enter + clique no botão disparavam 2 logins em paralelo -> 2FA pedido 2x seguidas
+  if(window._loginBusy) return;
+  window._loginBusy = true;
+  try{ await _doLoginInner(); } finally { window._loginBusy = false; }
+}
+async function _doLoginInner(){
   const e = document.getElementById('loginUser').value.trim().toLowerCase();
   const p = document.getElementById('loginPass').value;
   const lk = _loginLock(e);
@@ -2354,6 +2360,11 @@ function renderDashboard(){
   });
   const ord = {crit:0, warn:1, info:2, pendente:3, ok:4};
   lista.sort((a,b)=>ord[a.status.cls]-ord[b.status.cls]);
+  // filtro por status (clique nos cards)
+  const fS = filtros.statusDash||'';
+  const listaF = fS ? lista.filter(c=>c.status.cls===fS) : lista;
+  const fSLabel = {warn:'VENCENDO', crit:'VENCIDOS/RECUSADOS', pendente:'NÃO ENVIADOS', info:'AGUARDANDO SESMT'}[fS]||'';
+  const selCard = (s)=> fS===s ? ';outline:2px solid var(--bm-blue);outline-offset:2px' : '';
 
   document.getElementById('main').innerHTML = `
     <div class="page-header">
@@ -2363,17 +2374,17 @@ function renderDashboard(){
     ${toolbarFiltros({busca:false,obra:true,empresa:true})}
     <div class="stats">
       <div class="stat-card ok"><div class="stat-label">Em dia</div><div class="stat-value">${conformes}</div><div class="stat-sub">de ${totalDocs} documentos exigidos</div></div>
-      <div class="stat-card warn"><div class="stat-label">Vencendo</div><div class="stat-value">${vencendo}</div><div class="stat-sub">próximos ${DB.config.diasAvisoVencimento} dias</div></div>
-      <div class="stat-card crit"><div class="stat-label">Vencidos/Recusados</div><div class="stat-value">${vencidos}</div><div class="stat-sub">ação imediata</div></div>
-      <div class="stat-card"><div class="stat-label">Não enviados</div><div class="stat-value">${pendentes}</div></div>
-      <div class="stat-card" style="border-color:var(--info)"><div class="stat-label">Aguardando SESMT</div><div class="stat-value">${aguardando}</div><div class="stat-sub">análise pendente</div></div>
+      <div class="stat-card warn" style="cursor:pointer${selCard('warn')}" title="Clique para filtrar a lista" onclick="filtroStatusDash('warn')"><div class="stat-label">Vencendo</div><div class="stat-value">${vencendo}</div><div class="stat-sub">próximos ${DB.config.diasAvisoVencimento} dias</div></div>
+      <div class="stat-card crit" style="cursor:pointer${selCard('crit')}" title="Clique para filtrar a lista" onclick="filtroStatusDash('crit')"><div class="stat-label">Vencidos/Recusados</div><div class="stat-value">${vencidos}</div><div class="stat-sub">ação imediata</div></div>
+      <div class="stat-card" style="cursor:pointer${selCard('pendente')}" title="Clique para filtrar a lista" onclick="filtroStatusDash('pendente')"><div class="stat-label">Não enviados</div><div class="stat-value">${pendentes}</div></div>
+      <div class="stat-card" style="border-color:var(--info);cursor:pointer${selCard('info')}" title="Clique para filtrar a lista" onclick="filtroStatusDash('info')"><div class="stat-label">Aguardando SESMT</div><div class="stat-value">${aguardando}</div><div class="stat-sub">análise pendente</div></div>
     </div>
     <div class="card">
-      <h3 style="margin-bottom:12px">⚠️ Pendências (${lista.length})</h3>
-      ${lista.length===0?'<div class="empty"><div class="empty-icon">✅</div>Tudo em dia!</div>':`
+      <h3 style="margin-bottom:12px">⚠️ Pendências (${listaF.length})${fS?` <span class="status ${fS}" style="margin-left:6px">${fSLabel}</span> <a href="#" onclick="filtroStatusDash('${fS}');return false" style="font-size:12px;margin-left:6px">✕ limpar filtro</a>`:` <span style="font-size:12px;font-weight:400;color:var(--muted);margin-left:6px">(clique nos cards acima para filtrar)</span>`}</h3>
+      ${listaF.length===0?'<div class="empty"><div class="empty-icon">✅</div>'+(fS?'Nada neste status!':'Tudo em dia!')+'</div>':`
       <table>
         <thead><tr><th>Tipo</th><th>Item</th><th>Documento</th><th>Vínculo</th><th>IA</th><th>Status</th></tr></thead>
-        <tbody>${lista.slice(0,25).map(c=>`
+        <tbody>${listaF.slice(0,25).map(c=>`
           <tr>
             <td>${c.tipo==='empresa'?'🏢':c.tipo==='funcionario'?'👷':'🚜'}</td>
             <td><b>${c.nomeRef}</b></td>
@@ -2383,11 +2394,12 @@ function renderDashboard(){
             <td><span class="status ${c.status.cls}">${c.status.label}</span></td>
           </tr>`).join('')}</tbody>
       </table>
-      ${lista.length>25?`<div style="text-align:center;margin-top:12px;color:var(--muted)">+ ${lista.length-25} pendências (ver Relatórios)</div>`:''}
+      ${listaF.length>25?`<div style="text-align:center;margin-top:12px;color:var(--muted)">+ ${listaF.length-25} pendências (ver Relatórios)</div>`:''}
       `}
     </div>
   `;
 }
+function filtroStatusDash(s){ filtros.statusDash = (filtros.statusDash===s ? '' : s); renderDashboard(); }
 
 /* ===== TOOLBAR DE FILTROS (dropdowns) ===== */
 function toolbarFiltros(opts={}){
@@ -3566,6 +3578,18 @@ function renderRelatorios(){
       </table>
       ${linhas.length===0?'<div class="empty">Sem registros</div>':''}
     </div>
+    ${session && session.tipo!=='empresa' ? `
+    <div class="card">
+      <h3 style="margin-bottom:6px">📊 Efetivo Mensal (portaria)</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Presença por empresa e função em cada dia do mês, com total por empresa e total da obra — baseado nas leituras da portaria. Funções internas de engenharia (coordenador, engenheiro, planejamento, auxiliar) ficam de fora.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0;min-width:220px"><label>Obra</label><select id="efm_obra">${escopoObras().filter(o=>o.ativa!==false).map(o=>`<option value="${o.id}">${o.nome}</option>`).join('')}</select></div>
+        <div class="form-group" style="margin:0"><label>Mês</label><input type="month" id="efm_mes" value="${new Date(Date.now()-3*3600000).toISOString().slice(0,7)}"></div>
+        <button class="btn btn-secondary" onclick="efetivoMensal('xlsx')">⬇️ Excel</button>
+        <button class="btn btn-primary" onclick="efetivoMensal('pdf')">⬇️ PDF</button>
+      </div>
+      <div id="efm_status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    </div>`:''}
   `;
 }
 function exportarCSV(){
@@ -3576,6 +3600,170 @@ function exportarCSV(){
   const csv = rows.map(r=>r.map(c=>`"${c.replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='relatorio-sesmt.csv'; a.click();
+}
+
+/* ===== EFETIVO MENSAL (Excel/PDF, baseado nos acessos da portaria) ===== */
+const RE_FUNCAO_INTERNA = /coorden|engenh|planejam|auxiliar/i; // equipe interna fora dos efetivos (igual na Edge efetivo-whatsapp)
+const MESES_PT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const LOGO_BM_B64 = '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';
+function _efmLoad(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('Sem internet ou bloqueio ao carregar biblioteca')); document.head.appendChild(s); }); }
+async function _efmDados(obraId, ano, mes){ // mes 1-12; presença = qualquer leitura da portaria no dia (horário de Brasília)
+  const ini = new Date(Date.UTC(ano, mes-1, 1, 3, 0, 0));
+  const fim = new Date(Date.UTC(ano, mes, 1, 3, 0, 0));
+  const {data:acc, error} = await sb.from('acessos').select('funcionario_id,momento').eq('obra_id',obraId).gte('momento',ini.toISOString()).lt('momento',fim.toISOString()).limit(50000);
+  if(error) throw error;
+  const nDias = new Date(ano, mes, 0).getDate();
+  const porDia = {};
+  (acc||[]).forEach(a=>{
+    const d = new Date(new Date(a.momento).getTime() - 3*3600000);
+    if(d.getUTCFullYear()!==ano || (d.getUTCMonth()+1)!==mes) return;
+    const dia = d.getUTCDate();
+    (porDia[dia] = porDia[dia] || new Set()).add(a.funcionario_id);
+  });
+  const nomeEmp = {}; DB.empresas.forEach(e=>nomeEmp[e.id]=e.razao);
+  const nomeFun = {}; DB.catalogoFuncoes.forEach(f=>nomeFun[f.id]=f.nome);
+  const fMap = {}; DB.funcionarios.forEach(f=>fMap[f.id]=f);
+  const linhas = {};
+  Object.keys(porDia).forEach(dia=>{
+    porDia[dia].forEach(fid=>{
+      const f = fMap[fid]; if(!f) return;
+      const funcao = (nomeFun[f.funcaoId] || 'SEM FUNÇÃO').toUpperCase();
+      if(RE_FUNCAO_INTERNA.test(funcao)) return;
+      const empresa = nomeEmp[f.empresaId] || 'SEM EMPRESA';
+      const k = empresa+'||'+funcao;
+      (linhas[k] = linhas[k] || {empresa, funcao, dias:{}}).dias[dia] = (linhas[k].dias[dia]||0)+1;
+    });
+  });
+  const arr = Object.values(linhas).sort((a,b)=> a.empresa===b.empresa ? a.funcao.localeCompare(b.funcao) : a.empresa.localeCompare(b.empresa));
+  const empresas = [];
+  arr.forEach(l=>{
+    let g = empresas[empresas.length-1];
+    if(!g || g.empresa!==l.empresa){ g={empresa:l.empresa, funcoes:[], tot:{}}; empresas.push(g); }
+    g.funcoes.push(l);
+    for(const d in l.dias) g.tot[d]=(g.tot[d]||0)+l.dias[d];
+  });
+  const totObra = {};
+  empresas.forEach(g=>{ for(const d in g.tot) totObra[d]=(totObra[d]||0)+g.tot[d]; });
+  return {nDias, empresas, totObra};
+}
+function _efmMedia(dias, nDias){
+  let total=0, diasTrab=0;
+  for(let d=1;d<=nDias;d++){ const q=dias[d]||0; if(q>0){ total+=q; diasTrab++; } }
+  return {total, diasTrab, media: diasTrab? Math.round(total/diasTrab) : 0};
+}
+async function efetivoMensal(fmt){
+  const obraId = parseInt(val('efm_obra')); const mesV = val('efm_mes');
+  if(!obraId || !mesV){ toast('Escolha a obra e o mês','err'); return; }
+  const [ano, mes] = mesV.split('-').map(Number);
+  const obra = DB.obras.find(o=>o.id===obraId);
+  const st = document.getElementById('efm_status'); if(st) st.textContent='⏳ Gerando…';
+  try{
+    const dados = await _efmDados(obraId, ano, mes);
+    if(!Object.keys(dados.totObra).length){ if(st) st.textContent=''; toast('Sem registros de portaria nesse mês para essa obra.','warn'); return; }
+    const nomeArq = ('Efetivo '+(obra?.nome||'')+' '+String(mes).padStart(2,'0')+'-'+ano).replace(/[\\/:*?"<>|]/g,'-');
+    if(fmt==='xlsx') await _efmXlsx(dados, obra, ano, mes, nomeArq);
+    else await _efmPdf(dados, obra, ano, mes, nomeArq);
+    if(st) st.textContent='';
+    toast('Relatório gerado ✓');
+  }catch(e){ console.error('efetivoMensal',e); if(st) st.textContent=''; toast('Erro ao gerar: '+(e.message||e),'err'); }
+}
+async function _efmXlsx(dados, obra, ano, mes, nomeArq){
+  if(!window.XLSX) await _efmLoad('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  const nD = dados.nDias;
+  const aoa = [];
+  aoa.push(['EFETIVO MENSAL — '+(obra?.nome||'')+' — '+MESES_PT[mes-1]+' DE '+ano]);
+  aoa.push(['EMPRESA','FUNÇÃO'].concat(Array.from({length:nD},(_,i)=>i+1), ['MÉDIA','DIAS TRAB','TOTAL']));
+  dados.empresas.forEach(g=>{
+    g.funcoes.forEach(l=>{
+      const m=_efmMedia(l.dias,nD);
+      aoa.push([g.empresa, l.funcao].concat(Array.from({length:nD},(_,i)=>l.dias[i+1]||''), [m.media, m.diasTrab, m.total]));
+    });
+    const mg=_efmMedia(g.tot,nD);
+    aoa.push(['TOTAL '+g.empresa,''].concat(Array.from({length:nD},(_,i)=>g.tot[i+1]||''), [mg.media, mg.diasTrab, mg.total]));
+  });
+  const mo=_efmMedia(dados.totObra,nD);
+  aoa.push(['TOTAL DA OBRA',''].concat(Array.from({length:nD},(_,i)=>dados.totObra[i+1]||''), [mo.media, mo.diasTrab, mo.total]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:28},{wch:22}].concat(Array.from({length:nD},()=>({wch:3.6})), [{wch:7},{wch:10},{wch:7}]);
+  ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:nD+4}}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Efetivo');
+  XLSX.writeFile(wb, nomeArq+'.xlsx');
+}
+async function _efmPdf(dados, obra, ano, mes, nomeArq){
+  if(!window.PDFLib) await _efmLoad('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js');
+  const {PDFDocument, StandardFonts, rgb} = PDFLib;
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  let logo=null; try{ logo = await pdf.embedPng(Uint8Array.from(atob(LOGO_BM_B64), c=>c.charCodeAt(0))); }catch(e){}
+  const azul = rgb(0.10,0.24,0.49), cinza = rgb(.45,.45,.45), laranja = rgb(0.97,0.53,0);
+  const W=842, H=595, M=28;
+  const nD = dados.nDias;
+  const wLabel=150, wFim=30, wDia=(W-2*M-wLabel-3*wFim)/nD;
+  let page, y;
+  const header = ()=>{
+    page = pdf.addPage([W,H]); y = H-34;
+    if(logo){ const lw=86, lh=lw*logo.height/logo.width; page.drawImage(logo,{x:M,y:y-lh+16,width:lw,height:lh}); }
+    page.drawText('EFETIVO MENSAL', {x:M+100, y:y-2, size:15, font:bold, color:azul});
+    page.drawText('Obra: '+(obra?.nome||'')+'   —   '+MESES_PT[mes-1]+' DE '+ano, {x:M+100, y:y-18, size:10, font:font, color:cinza});
+    y -= 42;
+    page.drawText('EMPRESA / FUNÇÃO', {x:M, y, size:6.5, font:bold, color:cinza});
+    for(let d=1; d<=nD; d++) page.drawText(String(d), {x:M+wLabel+(d-1)*wDia+1.5, y, size:6, font:bold, color:cinza});
+    page.drawText('MÉD', {x:M+wLabel+nD*wDia+2, y, size:6, font:bold, color:cinza});
+    page.drawText('DIAS', {x:M+wLabel+nD*wDia+wFim+2, y, size:6, font:bold, color:cinza});
+    page.drawText('TOT', {x:M+wLabel+nD*wDia+2*wFim+2, y, size:6, font:bold, color:cinza});
+    y -= 4; page.drawLine({start:{x:M,y}, end:{x:W-M,y}, thickness:0.8, color:azul}); y -= 10;
+  };
+  const linha = (label, dias, opts)=>{
+    opts = opts||{};
+    if(y < 56) header();
+    const f = opts.bold?bold:font; const cor = opts.cor||rgb(0,0,0); const sz = opts.sz||6.5;
+    if(opts.fundo) page.drawRectangle({x:M-2, y:y-2.5, width:W-2*M+4, height:10, color:opts.fundo});
+    page.drawText(String(label).slice(0,44), {x:M+(opts.ind||0), y, size:sz, font:f, color:cor});
+    const m=_efmMedia(dias,nD);
+    for(let d=1; d<=nD; d++){ const q=dias[d]; if(q) page.drawText(String(q), {x:M+wLabel+(d-1)*wDia+1.5, y, size:sz, font:f, color:cor}); }
+    if(m.total){
+      page.drawText(String(m.media), {x:M+wLabel+nD*wDia+2, y, size:sz, font:f, color:cor});
+      page.drawText(String(m.diasTrab), {x:M+wLabel+nD*wDia+wFim+2, y, size:sz, font:f, color:cor});
+      page.drawText(String(m.total), {x:M+wLabel+nD*wDia+2*wFim+2, y, size:sz, font:f, color:cor});
+    }
+    y -= 11;
+  };
+  header();
+  dados.empresas.forEach(g=>{
+    linha(g.empresa, {}, {bold:true, cor:azul, sz:7});
+    g.funcoes.forEach(l=> linha(l.funcao, l.dias, {ind:10}));
+    linha('TOTAL '+String(g.empresa).slice(0,32), g.tot, {bold:true, cor:azul, fundo:rgb(.93,.95,.99)});
+    y -= 3;
+  });
+  linha('TOTAL DA OBRA', dados.totObra, {bold:true, cor:laranja, sz:7.5, fundo:rgb(1,.95,.88)});
+  // gráfico: total da obra por dia + linha da média
+  if(y < 195) header();
+  y -= 14;
+  page.drawText('TOTAL DA OBRA POR DIA', {x:M, y, size:8, font:bold, color:azul});
+  const ch=115, cw=W-2*M-30, x0=M+22, y0=y-ch-16;
+  const mo=_efmMedia(dados.totObra,nD);
+  let maxV=0; for(let d=1;d<=nD;d++) maxV=Math.max(maxV, dados.totObra[d]||0);
+  if(maxV>0){
+    page.drawLine({start:{x:x0,y:y0}, end:{x:x0+cw,y:y0}, thickness:0.8, color:cinza});
+    const bw = cw/nD;
+    for(let d=1;d<=nD;d++){
+      const v=dados.totObra[d]||0;
+      if(v){
+        const bh = v/maxV*(ch-16);
+        page.drawRectangle({x:x0+(d-1)*bw+1.5, y:y0, width:Math.max(bw-3,1), height:bh, color:azul});
+        page.drawText(String(v), {x:x0+(d-1)*bw+1.5, y:y0+bh+2, size:5, font:font, color:azul});
+      }
+      page.drawText(String(d), {x:x0+(d-1)*bw+1.5, y:y0-8, size:5, font:font, color:cinza});
+    }
+    const ym = y0 + (mo.media/maxV)*(ch-16);
+    page.drawLine({start:{x:x0,y:ym}, end:{x:x0+cw,y:ym}, thickness:0.8, color:laranja, dashArray:[3,3]});
+    page.drawText('média '+mo.media, {x:x0+cw-42, y:ym+3, size:6, font:bold, color:laranja});
+  }
+  const bytes = await pdf.save();
+  const blob = new Blob([bytes], {type:'application/pdf'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nomeArq+'.pdf'; a.click();
 }
 
 function destinatariosObra(obraId){
