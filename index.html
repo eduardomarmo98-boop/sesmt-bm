@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.08.9">
+<meta name="app-version" content="2026.07.08.10">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -371,7 +371,7 @@ function save(){
 }
 function load(){
   DB = {usuarios:[],catalogoDocs:[],catalogoFuncoes:[],empresas:[],obras:[],funcionarios:[],maquinas:[],documentos:[],acessos:[],logs:[],fopagCatalogo:[],fopagDocs:[],
-    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,autoAprovarIA:false,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
+    config:{smtp:{host:'',porta:587,usuario:'',senha:'',remetente:''},diasAvisoVencimento:30,iaHabilitada:true,autoAprovarIA:false,geminiApiKey:'',geminiApiKey2:'',geminiApiKey3:'',geminiApiKey4:'',geminiApiKey5:'',geminiModel:'gemini-2.5-flash-lite',webhookMake:'',logoData:'',nomeEmpresa:'BRANDÃO & MARMO',corPrimaria:'#1a3d7c',corSecundaria:'#F88800'}};
 }
 
 /* ===== SYNC DIFERENCIAL =====
@@ -382,7 +382,7 @@ let _snap = {};
 function _snapSet(t,id,row){ _snap[t+':'+id] = JSON.stringify(row); }
 function _snapDiff(t,id,row){ return _snap[t+':'+id] !== JSON.stringify(row); }
 /* payloads enviados ao Supabase — usados pelo sync E pela fotografia (manter iguais!) */
-function _rowCfg(c){ return {id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, auto_aprovar_ia:c.autoAprovarIA===true, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'}; }
+function _rowCfg(c){ return {id:1, smtp_host:c.smtp?.host||'', smtp_porta:c.smtp?.porta||587, smtp_user:c.smtp?.usuario||'', smtp_pass:c.smtp?.senha||'', smtp_remetente:c.smtp?.remetente||'', dias_aviso_vencimento:c.diasAvisoVencimento||30, ia_habilitada:c.iaHabilitada!==false, auto_aprovar_ia:c.autoAprovarIA===true, gemini_api_key:c.geminiApiKey||'', gemini_api_key_2:c.geminiApiKey2||'', gemini_api_key_3:c.geminiApiKey3||'', gemini_api_key_4:c.geminiApiKey4||'', gemini_api_key_5:c.geminiApiKey5||'', gemini_model:c.geminiModel||'gemini-2.5-flash-lite', webhook_make:c.webhookMake||'', logo_data:c.logoData||'', nome_empresa:c.nomeEmpresa||'BRANDÃO & MARMO', cor_primaria:c.corPrimaria||'#1a3d7c', cor_secundaria:c.corSecundaria||'#F88800'}; }
 function _rowCatDoc(d){ return {id:d.id,nome:d.nome,categoria:d.categoria,validade_dias:d.validadeDias||null,descricao:d.descricao||'',checklist_ia:d.checklistIA||'',exige_data:d.exigeData!==false}; }
 function _rowFuncao(f){ return {id:f.id,nome:f.nome,docs_ids:f.docsIds||[]}; }
 function _rowObra(o){ return {nome:o.nome,endereco:o.endereco||'',ativa:o.ativa!==false,cliente_nome:o.clienteNome||'',destinatarios_extras:o.destinatariosExtras||'',coordenador_id:o.coordenadorId||null,engenheiro_id:o.engenheiroId||null,tst_id:o.tstId||null,sesmt_id:o.sesmtId||null,docs_empresa:o.docsEmpresa||[],docs_funcionario_base:o.docsFuncionarioBase||[],docs_maquina:o.docsMaquina||[],whatsapp_grupo:o.whatsappGrupo||null,cno:o.cno||''}; }
@@ -432,7 +432,7 @@ async function loadFromSupabase(){
     DB.documentos = (dc.data||[]).map(d=>({id:d.id,refTipo:d.ref_tipo,refId:d.ref_id,obraId:d.obra_id,docId:d.doc_id,arquivo:d.arquivo,arquivoPath:d.arquivo_path,arquivoData:'',emitidoEm:d.emitido_em,validade:d.validade,iaStatus:d.ia_status,iaNota:d.ia_nota,sesmtStatus:d.sesmt_status,sesmtMotivo:d.sesmt_motivo,sesmtPor:d.sesmt_por}));
     if(cfg.data){
       const c = cfg.data;
-      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,autoAprovarIA:c.auto_aprovar_ia===true,geminiApiKey:c.gemini_api_key||'',geminiApiKey2:c.gemini_api_key_2||'',geminiApiKey3:c.gemini_api_key_3||'',geminiModel:c.gemini_model||'gemini-2.5-flash-lite',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
+      DB.config = {smtp:{host:c.smtp_host||'',porta:c.smtp_porta||587,usuario:c.smtp_user||'',senha:c.smtp_pass||'',remetente:c.smtp_remetente||''},diasAvisoVencimento:c.dias_aviso_vencimento||30,iaHabilitada:c.ia_habilitada!==false,autoAprovarIA:c.auto_aprovar_ia===true,geminiApiKey:c.gemini_api_key||'',geminiApiKey2:c.gemini_api_key_2||'',geminiApiKey3:c.gemini_api_key_3||'',geminiApiKey4:c.gemini_api_key_4||'',geminiApiKey5:c.gemini_api_key_5||'',geminiModel:c.gemini_model||'gemini-2.5-flash-lite',webhookMake:c.webhook_make||'',logoData:c.logo_data||'',nomeEmpresa:c.nome_empresa||'BRANDÃO & MARMO',corPrimaria:c.cor_primaria||'#1a3d7c',corSecundaria:c.cor_secundaria||'#F88800'};
       // cache da marca para a tela de login (acessível antes do auth)
       try{ localStorage.setItem('bm_branding', JSON.stringify({logoData:DB.config.logoData,nomeEmpresa:DB.config.nomeEmpresa,corPrimaria:DB.config.corPrimaria,corSecundaria:DB.config.corSecundaria})); }catch(e){}
     }
@@ -614,6 +614,8 @@ function _seedDESATIVADO(){
       geminiApiKey:'',
       geminiApiKey2:'',
       geminiApiKey3:'',
+      geminiApiKey4:'',
+      geminiApiKey5:'',
       geminiModel:'gemini-2.5-flash-lite',
       logoData:'',
       nomeEmpresa:'BRANDÃO & MARMO',
@@ -1510,14 +1512,23 @@ async function fopagBaixarZip(){
   a.download=('FOPAG '+((emp&&emp.razao)||'')+' '+((obra&&obra.nome)||'')+' '+fopagCompLabel(comp)).replace(/[\\/:*?"<>|]/g,'-')+'.zip'; a.click();
   toast('ZIP com '+ok+' arquivo(s) gerado ✓');
 }
-async function fopagPdfStatus(){
+function fopagPdfStatus(){
+  const comp=_fopag.comp||fopagCompAtual();
+  const emps = [...new Map(fopagObrigacoes().map(ob=>[ob.empresa.id, ob.empresa])).values()].sort((a,b)=>a.razao.localeCompare(b.razao));
+  showModal('📄 PDF de status FOPAG — '+fopagCompLabel(comp), `
+    <div class="form-group"><label>Empresa</label><select id="fps_emp"><option value="">Todas as empresas</option>${emps.map(e=>`<option value="${e.id}">${escapeHtml(e.razao)}</option>`).join('')}</select></div>
+    <div class="form-group"><label>Nível de detalhe</label><select id="fps_nivel"><option value="det">Detalhado — cada documento e sua situação</option><option value="res">Resumido — uma linha por empresa</option></select></div>
+    <div class="alert info" style="font-size:12px">Usa a competência da tela (<b>${fopagCompLabel(comp)}</b>) e o filtro de obra atual (${_fopag.obraId?'obra selecionada':'todas as obras'}).</div>
+  `, ()=>{ const eid=parseInt(val('fps_emp'))||null; const nivel=val('fps_nivel')||'det'; closeModal(); _fopagPdfGerar(eid, nivel); return true; });
+}
+async function _fopagPdfGerar(empId, nivel){
   const comp=_fopag.comp||fopagCompAtual();
   toast('Gerando PDF…');
   await loadFopag();
   if(!window.PDFLib) await _efmLoad('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js');
   const {PDFDocument, StandardFonts, rgb} = PDFLib;
-  const obs = fopagObrigacoes();
-  if(!obs.length){ toast('Nenhuma empresa com colaboradores ativos','warn'); return; }
+  const obs = fopagObrigacoes().filter(ob=>!empId||ob.empresa.id===empId);
+  if(!obs.length){ toast('Nada a listar com esse filtro','warn'); return; }
   const porObra = {};
   obs.forEach(ob=>{ (porObra[ob.obra.nome]=porObra[ob.obra.nome]||[]).push(ob); });
   const atr = fopagEmAtraso(comp);
@@ -1529,37 +1540,56 @@ async function fopagPdfStatus(){
   const safe = s=>String(s||'').normalize('NFC').replace(/[^\x20-\x7E\xA0-\xFF]/g,'');
   const nova=()=>{ page=pdf.addPage([W,H]); y=H-42;
     if(logo){ const lw=105, lh=lw*logo.height/logo.width; page.drawImage(logo,{x:M,y:y-lh+12,width:lw,height:lh}); }
-    page.drawText('FOPAG — STATUS POR OBRA', {x:M+120, y:y-2, size:14, font:bold, color:azul});
+    page.drawText(nivel==='det'?'FOPAG — STATUS DETALHADO':'FOPAG — STATUS POR OBRA', {x:M+120, y:y-2, size:14, font:bold, color:azul});
     page.drawText(safe('Competência '+fopagCompLabel(comp)+'  ·  '+(atr?'PRAZO ENCERRADO em '+fopagPrazoLabel(comp):'prazo até '+fopagPrazoLabel(comp))+'  ·  emitido '+new Date().toLocaleDateString('pt-BR')), {x:M+120, y:y-18, size:8.5, font, color:cinza});
-    y-=50;
+    y-=52;
+  };
+  const stDe = row => (!row||!row.arquivoPath) ? {t:'NÃO ENVIADO', c:verm} : row.sesmtStatus==='recusado' ? {t:'RECUSADO', c:verm} : row.sesmtStatus==='aprovado' ? {t:'APROVADO', c:verde} : {t:'AGUARDANDO SESMT', c:ambar};
+  const cabecTab = ()=>{
+    page.drawText('DOCUMENTO',{x:M+2,y,size:7,font:bold,color:cinza});
+    page.drawText('COLABORADOR',{x:325,y,size:7,font:bold,color:cinza});
+    page.drawText('SITUAÇÃO',{x:458,y,size:7,font:bold,color:cinza});
+    y-=12;
+  };
+  let zeb=false;
+  const linhaTab = (c1,c2,sit,opts)=>{
+    opts=opts||{};
+    if(y<55){ nova(); if(nivel==='det') cabecTab(); }
+    if(opts.zebra) page.drawRectangle({x:M,y:y-3,width:W-2*M,height:13,color:rgb(.955,.965,.98)});
+    page.drawText(safe(c1).slice(0,50),{x:M+2,y,size:8.5,font:opts.bold?bold:font,color:opts.c1||rgb(0,0,0)});
+    page.drawText(safe(c2).slice(0,24),{x:325,y,size:8.5,font,color:rgb(0.15,0.15,0.15)});
+    if(sit) page.drawText(sit.t,{x:458,y,size:8.5,font:bold,color:sit.c});
+    y-=13;
   };
   nova();
   Object.keys(porObra).sort().forEach(obraNome=>{
-    if(y<95) nova();
-    page.drawText(safe(obraNome).slice(0,70), {x:M, y, size:11, font:bold, color:azul});
-    y-=5; page.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:azul}); y-=14;
-    page.drawText('EMPRESA',{x:M,y,size:7.5,font:bold,color:cinza});
-    page.drawText('ENVIADOS',{x:328,y,size:7.5,font:bold,color:cinza});
-    page.drawText('APROVADOS',{x:393,y,size:7.5,font:bold,color:cinza});
-    page.drawText('SITUAÇÃO',{x:468,y,size:7.5,font:bold,color:cinza});
-    y-=13;
+    if(y<110) nova();
+    page.drawText(safe('OBRA: '+obraNome).slice(0,75), {x:M, y, size:11, font:bold, color:azul});
+    y-=5; page.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1.2,color:azul}); y-=15;
     porObra[obraNome].sort((a,b)=>a.empresa.razao.localeCompare(b.empresa.razao)).forEach(ob=>{
-      if(y<60) nova();
       const r=fopagResumo(ob,comp);
       const completo = r.total>0 && r.aprov===r.total;
-      const sit = completo?'COMPLETO':(r.rec?'COM RECUSA':(atr?'EM ATRASO':'NO PRAZO'));
-      const cor = completo?verde:((atr||r.rec)?verm:ambar);
-      page.drawText(safe(ob.empresa.razao).slice(0,52),{x:M,y,size:9,font});
-      page.drawText(r.envi+'/'+r.total,{x:328,y,size:9,font});
-      page.drawText(r.aprov+'/'+r.total,{x:393,y,size:9,font});
-      page.drawText(sit,{x:468,y,size:9,font:bold,color:cor});
-      y-=13;
+      const sit = completo?{t:'COMPLETO',c:verde}:(r.rec?{t:'COM RECUSA',c:verm}:(atr?{t:'EM ATRASO',c:verm}:{t:'NO PRAZO',c:ambar}));
+      if(y<75){ nova(); }
+      if(nivel==='res'){
+        linhaTab(ob.empresa.razao, r.envi+'/'+r.total+' env · '+r.aprov+'/'+r.total+' aprov', sit, {bold:true, c1:azul});
+      } else {
+        page.drawText(safe(ob.empresa.razao).slice(0,55),{x:M,y,size:10,font:bold,color:azul});
+        page.drawText(safe(r.envi+'/'+r.total+' enviados · '+r.aprov+'/'+r.total+' aprovados'),{x:330,y,size:8,font,color:cinza});
+        page.drawText(sit.t,{x:458,y,size:9,font:bold,color:sit.c});
+        y-=13; cabecTab();
+        zeb=false;
+        if(ob.temClt) fopagItensEmpresa().forEach(i=>{ const row=fopagGetDoc(ob.empresa.id,ob.obra.id,comp,i.id,null); linhaTab('  '+i.nome,'(empresa)',stDe(row),{zebra:(zeb=!zeb)}); });
+        ob.pjs.forEach(pj=>fopagItensPj().forEach(i=>{ const row=fopagGetDoc(ob.empresa.id,ob.obra.id,comp,i.id,pj.id); linhaTab('  '+i.nome, pj.nome, stDe(row), {zebra:(zeb=!zeb)}); }));
+        y-=7;
+      }
     });
-    y-=12;
+    y-=10;
   });
   const bytes=await pdf.save();
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
-  a.download=('FOPAG status '+fopagCompLabel(comp)).replace(/[\\/:*?"<>|]/g,'-')+'.pdf'; a.click();
+  const empNome = empId ? ((DB.empresas.find(e=>e.id===empId)||{}).razao||'') : '';
+  a.download=('FOPAG status '+empNome+' '+fopagCompLabel(comp)).replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,' ')+'.pdf'; a.click();
   toast('PDF gerado ✓');
 }
 
@@ -2225,7 +2255,7 @@ async function _geminiCall(modelo, apiKey, base64, mimeType, prompt, tries){
 }
 function _geminiKeys(){
   // chaves de PROJETOS Google diferentes = cotas gratuitas independentes
-  return [DB.config.geminiApiKey, DB.config.geminiApiKey2, DB.config.geminiApiKey3]
+  return [DB.config.geminiApiKey, DB.config.geminiApiKey2, DB.config.geminiApiKey3, DB.config.geminiApiKey4, DB.config.geminiApiKey5]
     .map(k=>(k||'').trim()).filter(Boolean);
 }
 let _gemRR = 0; // revezamento: cada análise começa numa chave diferente (espalha o limite POR MINUTO entre os projetos)
@@ -2797,8 +2827,11 @@ function editEmpresa(id){
     });
     const paths = docs.map(d=>d.arquivoPath).filter(Boolean);
     if(paths.length) sb.storage.from('documentos').remove(paths).catch(()=>{});
-    // apaga usuario tipo empresa
-    if(userExistente) await sb.from('usuarios').delete().eq('id', userExistente.id);
+    // apaga usuario tipo empresa (LOGIN no Auth + perfil, via Edge — antes só apagava o perfil e o e-mail ficava preso)
+    if(userExistente){
+      const {data:_rx, error:_ex} = await sb.functions.invoke('excluir-usuario', {body:{userId:userExistente.id}}).catch(()=>({data:null,error:null}));
+      if(_ex || (_rx&&_rx.error)) await sb.from('usuarios').delete().eq('id', userExistente.id); // fallback: pelo menos o perfil
+    }
     // CASCADE no banco apaga empresa_obras/funcionarios/maquinas (FK ON DELETE CASCADE)
     await sb.from('documentos').delete().eq('ref_tipo','empresa').eq('ref_id', id);
     const {error} = await sb.from('empresas').delete().eq('id', id);
@@ -4162,6 +4195,8 @@ function renderConfig(){
       <div class="form-group"><label>Chave da API Gemini (principal)</label><input id="cf_gem" type="password" value="${c.geminiApiKey||''}" placeholder="AIzaSy..."></div>
       <div class="form-group"><label>Chave reserva 2 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem2" type="password" value="${c.geminiApiKey2||''}" placeholder="AIzaSy..."></div>
       <div class="form-group"><label>Chave reserva 3 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem3" type="password" value="${c.geminiApiKey3||''}" placeholder="AIzaSy..."></div>
+      <div class="form-group"><label>Chave reserva 4 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem4" type="password" value="${c.geminiApiKey4||''}" placeholder="AIzaSy..."></div>
+      <div class="form-group"><label>Chave reserva 5 <span style="color:#888;font-weight:400">(opcional — outro projeto Google)</span></label><input id="cf_gem5" type="password" value="${c.geminiApiKey5||''}" placeholder="AIzaSy..."></div>
       <div class="form-group" style="max-width:280px"><label>Modelo</label>
         <select id="cf_gemmod">
           <option value="gemini-2.5-flash-lite" ${(c.geminiModel||'gemini-2.5-flash-lite')==='gemini-2.5-flash-lite'?'selected':''}>gemini-2.5-flash-lite (rápido e econômico, recomendado)</option>
@@ -4185,6 +4220,8 @@ function salvarConfig(){
   DB.config.geminiApiKey=val('cf_gem');
   DB.config.geminiApiKey2=val('cf_gem2');
   DB.config.geminiApiKey3=val('cf_gem3');
+  DB.config.geminiApiKey4=val('cf_gem4');
+  DB.config.geminiApiKey5=val('cf_gem5');
   DB.config.geminiModel=val('cf_gemmod')||'gemini-2.5-flash-lite';
   DB.config.nomeEmpresa=val('cf_nome')||'BRANDÃO & MARMO';
   DB.config.corPrimaria=val('cf_cor1')||'#1a3d7c';
