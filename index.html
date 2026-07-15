@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.08.10">
+<meta name="app-version" content="2026.07.08.11">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -4492,16 +4492,19 @@ function renderDevolutiva(){
   const obra = DB.obras.find(o=>o.id==filtros.obraId);
   if(!obra){ filtros.obraId=''; go('devolutiva'); return; }
   // empresas que atuam na obra
-  const empresasObra = [...new Set([
+  const empresasObraTodas = [...new Set([
     ...DB.funcionarios.filter(f=>f.obraId===obra.id).map(f=>f.empresaId),
     ...DB.maquinas.filter(m=>m.obraId===obra.id).map(m=>m.empresaId)
-  ])].map(eid=>DB.empresas.find(e=>e.id===eid)).filter(Boolean);
+  ])].map(eid=>DB.empresas.find(e=>e.id===eid)).filter(Boolean).sort((a,b)=>a.razao.localeCompare(b.razao));
+  // filtro por empresa (gera a devolutiva só de uma empresa, se selecionada)
+  const filtroEmp = parseInt(filtros._devEmp)||null;
+  const empresasObra = filtroEmp ? empresasObraTodas.filter(e=>e.id===filtroEmp) : empresasObraTodas;
 
   // colunas empresa (docs da obra para empresa)
   const colsEmpresa = (obra.docsEmpresa||[]).map(id=>DB.catalogoDocs.find(d=>d.id===id)).filter(Boolean);
 
   // colunas colaborador: união docsFuncionarioBase + todos docs de todas funções dos colab da obra
-  const colabsObra = DB.funcionarios.filter(f=>f.obraId===obra.id);
+  const colabsObra = DB.funcionarios.filter(f=>f.obraId===obra.id && (!filtroEmp || f.empresaId===filtroEmp));
   const docsColabSet = new Set(obra.docsFuncionarioBase||[]);
   colabsObra.forEach(f=>{
     const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
@@ -4535,8 +4538,12 @@ function renderDevolutiva(){
         <div class="page-title">Devolutiva: ${obra.nome}</div>
         <div class="page-sub">Cliente: ${obra.clienteNome||'-'} • ${empresasObra.length} empresa(s) • ${colabsObra.length} colaborador(es)</div>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary" onclick="filtros.obraId='';go('devolutiva')">← Trocar obra</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select onchange="filtros._devEmp=this.value;go('devolutiva')" style="max-width:240px" title="Gerar a devolutiva de uma empresa específica">
+          <option value="">🏢 Todas as empresas</option>
+          ${empresasObraTodas.map(e=>`<option value="${e.id}" ${filtroEmp===e.id?'selected':''}>${escapeHtml(e.razao)}</option>`).join('')}
+        </select>
+        <button class="btn btn-secondary" onclick="filtros.obraId='';filtros._devEmp='';go('devolutiva')">← Trocar obra</button>
         <button class="btn btn-secondary" onclick="window.print()">🖨️ Imprimir</button>
         <button class="btn btn-secondary" onclick="exportarDevolutivaCSV()">⬇️ CSV</button>
         <button class="btn btn-primary" onclick="enviarDevolutiva(${obra.id})">✉️ Enviar ao cliente</button>
@@ -4550,7 +4557,7 @@ function renderDevolutiva(){
           <div style="font-size:11px;color:var(--muted);letter-spacing:2px">ENGENHARIA E CONSTRUÇÕES</div>
         </div>
         <div style="text-align:center;flex:1">
-          <h2 style="margin:0;font-size:18px">DEVOLUTIVA DOCUMENTAÇÃO — ${obra.nome.toUpperCase()}</h2>
+          <h2 style="margin:0;font-size:18px">DEVOLUTIVA DOCUMENTAÇÃO — ${obra.nome.toUpperCase()}${filtroEmp&&empresasObra[0]?'<br><span style="font-size:14px;color:var(--bm-orange)">'+escapeHtml(empresasObra[0].razao.toUpperCase())+'</span>':''}</h2>
           <div style="font-size:12px;color:var(--muted);margin-top:4px">Emitido em ${new Date().toLocaleDateString('pt-BR')}</div>
         </div>
         <div style="background:var(--ok);color:#fff;padding:8px 16px;border-radius:50%;font-weight:700;font-size:11px;text-align:center;line-height:1.2">SEGURANÇA<br>DO TRABALHO</div>
@@ -4575,7 +4582,7 @@ function renderDevolutiva(){
             const funcao = DB.catalogoFuncoes.find(c=>c.id==f.funcaoId);
             const exigidos = new Set(docsExigidosFuncionario(f).map(d=>d.id));
             return `<tr>
-              <td><b>${f.nome}</b><div style="font-size:10px;color:var(--muted)">${funcao?.nome||''}</div></td>
+              <td><b>${f.nome}</b><div style="font-size:10px;color:var(--muted)">${funcao?.nome||''}${!filtroEmp?' · '+(DB.empresas.find(e=>e.id===f.empresaId)?.razao||''):''}</div></td>
               ${colsColab.map(de=>{
                 if(!exigidos.has(de.id)) return '<td style="background:#9ca3af;color:#fff;text-align:center;font-weight:700">N/A</td>';
                 const c = statusCell(getDoc('funcionario',f.id,de.id),de);
