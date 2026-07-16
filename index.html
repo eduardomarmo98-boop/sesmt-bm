@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.08.11">
+<meta name="app-version" content="2026.07.16.13">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1355,11 +1355,13 @@ async function fopagIA(row, file, item, pj){
       if(r.ok) text=r.text||''; else falhou=r;
     } else {
       const {data,error} = await sb.functions.invoke('analisar-documento',{body:{base64,mimeType,prompt}});
-      if(!error && data && data.ok) text=String(data.text||''); else falhou={status:(data&&data.status)||0};
+      if(!error && data && data.ok) text=String(data.text||''); else falhou={status:(data&&data.status)||0, kind:(data&&data.kind)||''};
     }
     let st='pendente', nota='';
     if(falhou){
-      nota = falhou.status===429 ? 'Limite da IA atingido (por minuto ou do dia). Reanalise em 1-2 minutos ou avalie manualmente.'
+      nota = falhou.status===429 ? (falhou.kind==='dia'
+             ? 'Cota diária gratuita da IA esgotou em todas as chaves (renova ~4h-5h da manhã). Avalie manualmente ou reanalise amanhã.'
+             : 'Limite por minuto da IA atingido. Reanalise em 1-2 minutos ou avalie manualmente.')
            : 'IA indisponível agora. Avalie manualmente ou reenvie o arquivo.';
     } else {
       const cleaned = text.replace(/```json|```/g,'').trim();
@@ -2248,7 +2250,22 @@ async function _geminiCall(modelo, apiKey, base64, mimeType, prompt, tries){
     if([500,503].includes(res.status) && t<tries){ await new Promise(r=>setTimeout(r, t*1200)); continue; }
     break;
   }
-  if(!res.ok) return {ok:false, status:res.status};
+  if(!res.ok){
+    // 429: o Google diz no corpo se estourou o limite por MINUTO ou a cota do DIA — usamos isso
+    let kind='', retrySec=0;
+    if(res.status===429){
+      kind='min'; // na dúvida, trata como limite por minuto (volta sozinho)
+      try{
+        const err=(await res.json()).error||{};
+        const det=err.details||[];
+        const ids=det.flatMap(d=>d.violations||[]).map(v=>v.quotaId||'').join(' ')+' '+(err.message||'');
+        if(/PerDay|per day|daily/i.test(ids)) kind='dia';
+        const ri=det.find(d=>/RetryInfo/.test(d['@type']||''));
+        if(ri&&ri.retryDelay) retrySec=parseFloat(ri.retryDelay)||0;
+      }catch(e){}
+    }
+    return {ok:false, status:res.status, kind, retrySec};
+  }
   const data = await res.json(); const cand = data.candidates?.[0];
   const text = (cand?.content?.parts||[]).map(p=>p&&p.text?p.text:'').join('');
   return {ok:true, text, finishReason: cand?.finishReason||''};
@@ -2259,27 +2276,44 @@ function _geminiKeys(){
     .map(k=>(k||'').trim()).filter(Boolean);
 }
 let _gemRR = 0; // revezamento: cada análise começa numa chave diferente (espalha o limite POR MINUTO entre os projetos)
+// Memória por chave+modelo: chave que deu 429 fica de MOLHO (1 min se limite por minuto;
+// até ~5h da manhã se cota do dia). Assim NÃO desperdiçamos cota varrendo chave morta.
+const _gemKS = {};
+function _gemProxReset(){ // cota diária do Google renova ~4h-5h BRT (meia-noite na Califórnia)
+  const d=new Date(); d.setUTCHours(8,15,0,0); // 05:15 BRT
+  if(d.getTime()<=Date.now()) d.setUTCDate(d.getUTCDate()+1);
+  return d.getTime();
+}
+function _gemOK(modelo,key){ const s=_gemKS[modelo+'|'+key]; return !s || Date.now()>=Math.max(s.cool||0, s.dead||0); }
+function _gemMark(modelo,key,kind,retrySec){
+  const s=_gemKS[modelo+'|'+key]=_gemKS[modelo+'|'+key]||{};
+  if(kind==='dia') s.dead=_gemProxReset();
+  else s.cool=Date.now()+Math.max(60, retrySec||0)*1000;
+}
+function _gemTudoMorto(modelos,keys){ // true = TODAS as chaves com cota do DIA esgotada (não volta hoje)
+  return modelos.every(m=>keys.every(k=>{ const s=_gemKS[m+'|'+k]; return s && (s.dead||0)>Date.now(); }));
+}
 async function _geminiDireto(base64, mimeType, prompt){
-  const modelo = DB.config.geminiModel||'gemini-2.5-flash-lite';
+  const pref = DB.config.geminiModel||'gemini-2.5-flash-lite';
   const keys = _geminiKeys();
   if(!keys.length) return {ok:false, status:0};
-  let last = {ok:false, status:0};
+  // modelo escolhido + gemini-2.5-flash de reserva (cota própria); cada chave = projeto/cota separada
+  const modelos = pref==='gemini-2.5-flash' ? ['gemini-2.5-flash'] : [pref,'gemini-2.5-flash'];
   const off = (_gemRR++) % keys.length;
-  // 1) modelo escolhido, revezando as chaves. Se a chave estourar a cota (429)
-  //    ou falhar/voltar vazia, cai SOZINHO na próxima chave (outro projeto/cota).
-  for(let i=0;i<keys.length;i++){
-    const r = await _geminiCall(modelo, keys[(off+i)%keys.length], base64, mimeType, prompt, 2);
-    if(r.ok && r.text && r.text.trim()) return r;
-    last = r;
-  }
-  // 2) último recurso: gemini-2.5-flash (cota própria, mais robusto) nas mesmas chaves
-  if(modelo!=='gemini-2.5-flash'){
+  let last = {ok:false, status:0}, fez=false;
+  for(const modelo of modelos){
     for(let i=0;i<keys.length;i++){
-      const r = await _geminiCall('gemini-2.5-flash', keys[(off+i)%keys.length], base64, mimeType, prompt, 1);
+      const k = keys[(off+i)%keys.length];
+      if(!_gemOK(modelo,k)) continue; // chave de molho (429 recente) — pula sem gastar cota
+      fez=true;
+      const r = await _geminiCall(modelo, k, base64, mimeType, prompt, modelo===pref?2:1);
       if(r.ok && r.text && r.text.trim()) return r;
       last = r;
+      if(r.status===429) _gemMark(modelo, k, r.kind||'min', r.retrySec);
     }
   }
+  // classifica o esgotamento: 'dia' SÓ se nenhuma chave volta hoje; senão é coisa de minuto (volta sozinho)
+  if(!fez || last.status===429) return {ok:false, status:429, kind:_gemTudoMorto(modelos,keys)?'dia':'min', retrySec:last.retrySec||0};
   return last;
 }
 async function analisarComGemini(file, docExigido, contexto){
@@ -2370,13 +2404,15 @@ IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (li
       const { data, error } = await sb.functions.invoke('analisar-documento', { body:{ base64, mimeType, prompt } });
       if(!error && data && data.ok){ text=String(data.text||''); finishReason=data.finishReason||''; }
       else if(data && (data.reason==='no_key' || data.reason==='disabled')) return simularIA();
-      else falhou={status:(data && data.status)||0};
+      else falhou={status:(data && data.status)||0, kind:(data && data.kind)||'', retrySec:(data && data.retrySec)||0};
     }
     if(falhou){
       const cota = falhou.status===429;
+      const dia = cota && falhou.kind==='dia';
       const ocupado = [500,503].includes(falhou.status);
-      return {iaStatus:'pendente', _cota:cota, iaNota: cota
-        ? 'Limite da IA atingido (por minuto ou do dia). Aguarde 1-2 minutos e clique em "🤖 Analisar". Se persistir, a cota gratuita do dia esgotou (renova ~4h-5h da manhã no Brasil) — avalie manualmente ou tente amanhã.'
+      return {iaStatus:'pendente', _cota:cota, _cotaDia:dia, _retrySec:falhou.retrySec||0, iaNota: dia
+        ? 'Cota diária gratuita da IA esgotou em TODAS as chaves (renova ~4h-5h da manhã). Avalie manualmente ou use "🤖 Analisar" amanhã.'
+        : cota ? 'Limite por minuto da IA atingido — o sistema espera e tenta sozinho. Se estiver analisando manualmente, aguarde 1 minuto e clique em "🤖 Analisar".'
         : ocupado ? 'IA ocupada no momento. Clique em "🤖 Analisar" de novo em alguns segundos.'
         : 'Não foi possível analisar agora. Clique em "🤖 Analisar" de novo ou avalie manualmente.'};
     }
@@ -3344,32 +3380,36 @@ async function salvarMassa(){
   if(analisarIA && pendentes.length){
     const ctx = contextoRef(tipo, refId, obraId);
     (async()=>{
-      let cotaSeguidas=0, paradosEm=-1;
+      let paradosEm=-1;
       for(let j=0;j<pendentes.length;j++){
         const p=pendentes[j];
         // ritmo seguro: ~13/min (o Google limita ~15/min POR PROJETO no plano grátis)
         if(j>0) await new Promise(r=>setTimeout(r,4500));
         let r = await analisarComGemini(p.arq, p.de, ctx);
-        if(r._cota){ // estourou o limite por MINUTO: espera 1 min e tenta de novo sozinho
-          toast('IA: limite por minuto atingido — aguardando 1 min pra continuar…','warn');
-          await new Promise(res=>setTimeout(res,65000));
+        // limite por MINUTO: espera e tenta o MESMO documento de novo (até 3 esperas) — NÃO desiste do lote
+        for(let w=0; w<3 && r._cota && !r._cotaDia; w++){
+          toast('IA: limite por minuto — aguardando pra continuar ('+(j+1)+'/'+pendentes.length+')…','warn');
+          await new Promise(res=>setTimeout(res, Math.max(65, r._retrySec||0)*1000));
           r = await analisarComGemini(p.arq, p.de, ctx);
         }
-        cotaSeguidas = r._cota ? cotaSeguidas+1 : 0;
+        if(r._cotaDia){ paradosEm=j; break; } // cota do DIA esgotou em TODAS as chaves — aí sim para
         const d = getDoc(tipo,refId,p.docId,obraId); if(!d) continue;
+        if(r._cota){ // 3 esperas e ainda congestionado: deixa SÓ este pra depois e segue o lote
+          d.iaStatus='pendente'; d.iaNota='IA congestionada agora. Use o botão "🤖 Analisar" mais tarde.';
+          save(); if(currentPage) go(currentPage); continue;
+        }
         d.iaStatus=r.iaStatus; d.iaNota=r.iaNota;
         if(p.de.exigeData!==false){ if(r.emissao) d.emitidoEm=r.emissao; if(p.de.validadeDias&&r.validade) d.validade=r.validade; }
         _autoAprovaIA(d);
         save(); if(currentPage) go(currentPage);
-        if(cotaSeguidas>=2){ paradosEm=j+1; break; } // 2 cotas seguidas mesmo após esperar = cota do DIA esgotou; para de insistir
       }
       if(paradosEm>=0){
         for(let j=paradosEm;j<pendentes.length;j++){
           const d=getDoc(tipo,refId,pendentes[j].docId,obraId);
-          if(d && d.iaStatus==='pendente' && /Analisando/i.test(d.iaNota||'')) d.iaNota='Cota do dia da IA esgotada. Use o botão "🤖 Analisar" amanhã ou avalie manualmente.';
+          if(d && d.iaStatus==='pendente' && /Analisando/i.test(d.iaNota||'')) d.iaNota='Cota diária da IA esgotada (renova ~4h-5h da manhã). Use o botão "🤖 Analisar" amanhã ou avalie manualmente.';
         }
         save(); if(currentPage) go(currentPage);
-        toast('Cota do dia da IA esgotada — os documentos restantes ficaram para depois.','warn');
+        toast('Cota diária da IA esgotada — os documentos restantes ficaram para depois.','warn');
       } else {
         toast('IA concluiu a análise dos arquivos.');
       }
@@ -4188,7 +4228,7 @@ function renderConfig(){
     <div class="card">
       <h3 style="margin-bottom:6px">🤖 Análise por IA (Google Gemini)</h3>
       <div class="alert info" style="font-size:12px;margin-bottom:14px">
-        <b>Gemini é gratuito</b> (~1.500 análises/dia por chave). <b>Dica:</b> crie 2-3 chaves em <u>projetos Google diferentes</u> em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--bm-blue)">aistudio.google.com/app/apikey</a> e cole abaixo — cada chave tem cota grátis própria e o sistema <b>troca sozinho</b> quando uma estoura o limite do dia.
+        <b>Gemini é gratuito</b> (cada chave/projeto tem cota diária própria, que renova ~4h-5h da manhã). <b>Dica:</b> crie até 5 chaves em <u>projetos Google diferentes</u> em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--bm-blue)">aistudio.google.com/app/apikey</a> e cole abaixo — o sistema reveza as chaves e <b>troca sozinho</b> quando uma estoura o limite.
       </div>
       <div class="form-group"><label><input type="checkbox" id="cf_ia" ${c.iaHabilitada?'checked':''} style="width:auto"> Habilitar análise por IA ao enviar documentos</label></div>
       <div class="form-group"><label><input type="checkbox" id="cf_ia_auto" ${c.autoAprovarIA?'checked':''} style="width:auto"> <b>Aprovar automaticamente</b> quando a IA aprovar (o documento entra como APROVADO sem revisão do SESMT — vale para documentos SESMT e FOPAG; recusas e dúvidas continuam indo para revisão)</label></div>
@@ -4204,6 +4244,7 @@ function renderConfig(){
         </select>
       </div>
       <button class="btn btn-secondary btn-sm" onclick="testarGemini()">🧪 Testar conexão</button>
+      <button class="btn btn-secondary btn-sm" onclick="reanalisarPendentes()">🤖 Reanalisar pendentes</button>
       <span id="testRes" style="margin-left:10px;font-size:12px"></span>
     </div>
     <div style="display:flex;gap:8px">
@@ -4318,6 +4359,45 @@ async function analisarDocBg(docId){
     save(); if(currentPage) go(currentPage);
     toast(cur.sesmtStatus==='aprovado'&&cur.sesmtPor===null?'IA: aprovado (aprovação automática)':'IA concluída: '+r.iaStatus, r.iaStatus==='recusado'?'err':r.iaStatus==='duvida'?'warn':'');
   }catch(e){ const cur=DB.documentos.find(x=>x.id===docId); if(cur){ cur.iaNota='Falha ao analisar. Tente de novo.'; save(); go(currentPage); } toast('Falha na análise da IA','err'); }
+}
+/* Reanalisa em série TODOS os documentos que ficaram sem análise (cota/congestionamento/travados).
+   Mesmo ritmo e controle de cota do envio em massa. Botão nas Configurações. */
+async function reanalisarPendentes(){
+  if(!pode('aprovar_doc')){ toast('Sem permissão','err'); return; }
+  if(DB.config.iaHabilitada===false){ toast('Análise por IA desativada nas Configurações','warn'); return; }
+  const alvo = DB.documentos.filter(d=>d.arquivoPath && d.iaStatus==='pendente'
+    && /cota|congestionad|analisando|limite|ocupad|não retornou|não foi possível/i.test(d.iaNota||''));
+  if(!alvo.length){ toast('Nenhum documento aguardando análise da IA','warn'); return; }
+  if(!confirm('Reanalisar '+alvo.length+' documento(s) que ficaram sem análise?\n\nRoda em 2º plano, um por vez (~13/min). Deixe esta aba aberta.')) return;
+  toast('IA reanalisando '+alvo.length+' documento(s) em 2º plano…');
+  let feitos=0, parou=false;
+  for(let j=0;j<alvo.length;j++){
+    if(j>0) await new Promise(r=>setTimeout(r,4500));
+    try{
+      const d0=alvo[j];
+      const {data:blob, error} = await sb.storage.from('documentos').download(d0.arquivoPath);
+      if(error || !blob) continue;
+      const de = DB.catalogoDocs.find(c=>c.id===d0.docId) || {nome:d0.docId, exigeData:true};
+      const ctx = contextoRef(d0.refTipo, d0.refId, d0.obraId);
+      let r = await analisarComGemini(blob, de, ctx);
+      // limite por MINUTO: espera e tenta o MESMO documento de novo (até 3 esperas)
+      for(let w=0; w<3 && r._cota && !r._cotaDia; w++){
+        toast('IA: limite por minuto — aguardando pra continuar ('+(j+1)+'/'+alvo.length+')…','warn');
+        await new Promise(res=>setTimeout(res, Math.max(65, r._retrySec||0)*1000));
+        r = await analisarComGemini(blob, de, ctx);
+      }
+      if(r._cotaDia){ parou=true; break; } // cota do DIA esgotou em TODAS as chaves
+      if(r._cota) continue; // congestionado: deixa este pra depois e segue
+      const cur = DB.documentos.find(x=>x.id===d0.id); if(!cur) continue;
+      cur.iaStatus=r.iaStatus; cur.iaNota=r.iaNota;
+      if(de.exigeData!==false){ if(r.emissao) cur.emitidoEm=r.emissao; if(de.validadeDias&&r.validade) cur.validade=r.validade; }
+      _autoAprovaIA(cur); feitos++;
+      save(); if(currentPage) go(currentPage);
+    }catch(e){ /* segue pro próximo */ }
+  }
+  toast(parou
+    ? 'Cota diária da IA esgotada — reanalisados '+feitos+' de '+alvo.length+'. O restante fica pra depois.'
+    : 'IA: reanálise concluída — '+feitos+' de '+alvo.length+' analisados.', parou?'warn':'');
 }
 async function abrirDoc(docId){
   const d = DB.documentos.find(x=>x.id===docId);
