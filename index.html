@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.16.16">
+<meta name="app-version" content="2026.07.17.17">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -3271,7 +3271,9 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm: semData?'':val('f_emit'), validade: validadeDias?val('f_val'):null,
       iaStatus:iaIni.iaStatus, iaNota:iaIni.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
-    save(); closeModal(); go(currentPage);   // sai da tela JÁ — não espera a IA
+    const _volta = _docsModalRef && _docsModalRef.tipo===tipo && _docsModalRef.refId===refId ? Object.assign({},_docsModalRef) : null;
+    save(); closeModal(); go(currentPage);   // salva JÁ — não espera a IA
+    if(_volta) setTimeout(()=>verDocsRef(_volta.tipo,_volta.refId,_volta.nome), 80); // reabre a lista de documentos (não te joga pra fora)
     if(vaiAnalisar){
       toast('Documento enviado. A IA está analisando…');
       const _arq=arq,_de=docExigido,_ctx=contexto,_k={tipo,refId,docId,obraId:obraId||null},_semData=semData,_vd=validadeDias;
@@ -3399,7 +3401,9 @@ async function salvarMassa(){
     if(analisarIA) pendentes.push({docId, de, arq});
     ok++;
   }
+  const _volta = _docsModalRef && _docsModalRef.tipo===tipo && _docsModalRef.refId===refId ? Object.assign({},_docsModalRef) : null;
   save(); closeModal(); go(currentPage);
+  if(_volta) setTimeout(()=>verDocsRef(_volta.tipo,_volta.refId,_volta.nome), 80); // reabre a lista de documentos
   toast(ok+' arquivo(s) enviado(s)'+(ign?', '+ign+' ignorado(s)':'')+(analisarIA&&pendentes.length?' — IA analisando…':''), ok?'':'warn');
   // 2) IA em 2º plano, um por vez (com folga p/ não estourar limite)
   if(analisarIA && pendentes.length){
@@ -4236,16 +4240,6 @@ function renderConfig(){
     </div>
 
     <div class="card">
-      <h3 style="margin-bottom:14px">📧 SMTP (alternativa ao webhook)</h3>
-      <div class="grid-2">
-        <div class="form-group"><label>Servidor</label><input id="cf_host" value="${c.smtp.host}"></div>
-        <div class="form-group"><label>Porta</label><input id="cf_porta" type="number" value="${c.smtp.porta}"></div>
-        <div class="form-group"><label>Usuário</label><input id="cf_user" value="${c.smtp.usuario}"></div>
-        <div class="form-group"><label>Senha</label><input id="cf_pass" type="password" value="${c.smtp.senha}"></div>
-      </div>
-      <div class="form-group"><label>Remetente</label><input id="cf_from" value="${c.smtp.remetente}"></div>
-    </div>
-    <div class="card">
       <h3 style="margin-bottom:14px">⏰ Alertas</h3>
       <div class="form-group" style="max-width:280px"><label>Dias antecedência para alerta de vencimento</label><input id="cf_dias" type="number" value="${c.diasAvisoVencimento}"></div>
     </div>
@@ -4279,7 +4273,7 @@ function renderConfig(){
   `;
 }
 function salvarConfig(){
-  DB.config.smtp={host:val('cf_host'),porta:parseInt(val('cf_porta'))||587,usuario:val('cf_user'),senha:val('cf_pass'),remetente:val('cf_from')};
+  DB.config.smtp = DB.config.smtp || {host:'',porta:587,usuario:'',senha:'',remetente:''}; // SMTP saiu da tela (e-mail é via webhook Make); campo preservado no banco
   DB.config.diasAvisoVencimento=parseInt(val('cf_dias'))||30;
   DB.config.iaHabilitada=document.getElementById('cf_ia').checked;
   DB.config.autoAprovarIA=document.getElementById('cf_ia_auto').checked;
