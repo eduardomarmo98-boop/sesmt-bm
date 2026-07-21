@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.17.18">
+<meta name="app-version" content="2026.07.17.19">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -189,8 +189,10 @@
   summary{padding:10px 14px;cursor:pointer;font-weight:500;background:#f9fafb;border-radius:6px}
   details[open] summary{border-bottom:1px solid var(--border);border-radius:6px 6px 0 0}
 
-  .doc-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #f3f4f6}
+  .doc-row{padding:12px 14px;border-bottom:1px solid #f3f4f6}
   .doc-row:last-child{border-bottom:none}
+  .doc-row-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .doc-row-actions{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
   .doc-name{font-weight:500}
   .doc-meta{font-size:11px;color:var(--muted);margin-top:2px}
   .badge-ia{font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600}
@@ -1330,6 +1332,7 @@ function fopagUpload(eid, oid, docId, funcId){
 function fopagPrompt(item, comp, emp, obra, pj){
   return `Voce e um analista SENIOR de Departamento Pessoal / FOPAG de uma construtora brasileira (Brandao & Marmo), conferindo a documentacao previdenciaria e de folha MENSAL enviada por empresas subcontratadas.
 
+DATA DE HOJE (referencia oficial): ${hoje()}. Use ESTA como "hoje"; ignore qualquer data que voce ache ser a atual (seu conhecimento pode estar desatualizado). Datas de emissao no passado sao NORMAIS — nunca recuse so por achar que uma data esta "no futuro".
 DOCUMENTO ESPERADO: "${item.nome}" (grupo: ${item.grupo})
 COMPETENCIA ESPERADA: ${comp} (${fopagCompLabel(comp)}) — mes/ano a que o documento deve se referir
 ${item.observacao?'REGRA DA B&M: '+item.observacao:''}
@@ -2413,11 +2416,13 @@ OUTPUT: APENAS UM JSON PURO, SEM markdown, SEM backticks. Formato EXATO:
 IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (lista) e "recomendacao" sao OBRIGATORIOS e devem explicar de forma CLARA, em portugues simples, o MOTIVO da recusa/duvida e exatamente o que a empresa deve fazer para corrigir.
 
 ═══ DATAS (MUITO IMPORTANTE) ═══
+DATA DE HOJE (referencia oficial): ${hoje()}. Considere ESTA como "hoje" — ignore qualquer data que voce ache ser a atual pelo seu conhecimento (ele pode estar desatualizado).
 Leia com atencao e SEMPRE preencha "emissao" e "validade" no formato AAAA-MM-DD:
 - "emissao": data em que o documento foi emitido/assinado/realizado (ex: data do exame no ASO, data de emissao do certificado/treinamento, data do RG). Procure termos como "Data", "Emitido em", "Data do exame", "Realizado em", "Data de emissao".
 - "validade": data de validade/vencimento SE constar no documento (termos "Validade", "Valido ate", "Vencimento", "Proximo exame"). Muitos ASOs e certificados trazem validade explicita — use a do documento.
 - Converta qualquer formato (dd/mm/aaaa, "12 de marco de 2026", etc) para AAAA-MM-DD. Se o ano tiver 2 digitos, assuma 20XX.
-- Se realmente NAO houver a data no documento, deixe o campo como null (NAO invente e NAO use a data de hoje).`;
+- Se realmente NAO houver a data no documento, deixe o campo como null (NAO invente e NAO use a data de hoje).
+REGRA CRITICA sobre "data no futuro": uma data de emissao ANTERIOR a ${hoje()} e TOTALMENTE NORMAL — documentos sao emitidos no passado. NUNCA recuse nem marque duvida so porque a emissao parece "no futuro" — quase sempre e apenas seu conhecimento desatualizado. So mencione emissao futura se a data for comprovadamente POSTERIOR a ${hoje()}.`;
 
   try{
     const base64 = await fileToBase64(file);
@@ -3185,31 +3190,33 @@ function renderDocRow(tipo, ref, de, obraId){
   const s = statusDoc(doc, de);
   const obraArg = obraId?`,${obraId}`:',null';
   return `<div class="doc-row" ondragover="event.preventDefault();this.style.background='#dbeafe'" ondragleave="this.style.background=''" ondrop="dropOnRow(event,'${tipo}',${ref.id},'${de.id}','${esc(de.nome)}',${de.validadeDias||'null'}${obraArg})">
-    <div>
-      <div class="doc-name">${de.nome}</div>
-      <div class="doc-meta">
-        ${doc?`📎 ${doc.arquivo}${(de&&de.exigeData===false)?'':` • Emitido: ${doc.emitidoEm||'-'}`}${doc.validade?` • Validade: ${doc.validade}`:''}`:'<span style="color:var(--muted)">⤓ Arraste o PDF aqui ou clique em Enviar →</span>'}
+    <div class="doc-row-head">
+      <div style="flex:1;min-width:160px">
+        <div class="doc-name">${de.nome}</div>
+        <div class="doc-meta">
+          ${doc?`📎 ${doc.arquivo}${(de&&de.exigeData===false)?'':` • Emitido: ${doc.emitidoEm||'-'}`}${doc.validade?` • Validade: ${doc.validade}`:''}`:'<span style="color:var(--muted)">⤓ Arraste o PDF aqui ou clique em Enviar →</span>'}
+        </div>
       </div>
-      ${doc && doc.arquivoPath && de.exigeData!==false && !doc.emitidoEm ? `<div style="margin-top:4px;font-size:12px;color:#b45309;font-weight:600">⚠️ A IA não leu a data — clique em <b>📅 Data</b> para informar (não precisa reenviar o arquivo).</div>`:''}
-      ${doc && (doc.iaNota || doc.sesmtMotivo) ? `
-        <div style="margin-top:8px;padding:10px 12px;background:#f9fafb;border-left:3px solid ${doc.sesmtStatus==='recusado'?'var(--crit)':doc.iaStatus==='recusado'?'var(--crit)':doc.iaStatus==='duvida'?'var(--warn)':'var(--info)'};border-radius:4px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">
-          ${doc.iaNota?`<div><b>🤖 Análise da IA (${doc.iaStatus}):</b>\n${escapeHtml(doc.iaNota)}</div>`:''}
-          ${doc.sesmtMotivo?`<div style="color:var(--crit);margin-top:8px;padding-top:8px;border-top:1px solid #fecaca"><b>✗ Motivo da recusa SESMT:</b>\n${escapeHtml(doc.sesmtMotivo)}</div>`:''}
-        </div>` : ''}
+      <div class="doc-row-actions">
+        <span class="status ${s.cls}">${s.label}</span>
+        ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Abrir / visualizar documento" onclick="abrirDoc(${doc.id})">👁️ Abrir</button>`:''}
+        ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
+        ${doc && doc.arquivoPath && DB.config.iaHabilitada!==false ? `<button class="btn btn-secondary btn-sm" title="Analisar com IA em 2º plano" onclick="analisarDocBg(${doc.id})">🤖 Analisar</button>`:''}
+        ${doc && de.exigeData!==false && pode('enviar_doc') ? `<button class="btn btn-secondary btn-sm" title="Informar/corrigir data de emissão e validade sem reenviar o arquivo" onclick="editarDataDoc(${doc.id})">📅 Data${!doc.emitidoEm?' ⚠️':''}</button>`:''}
+        ${doc && pode('aprovar_doc') && doc.sesmtStatus==='pendente' ? `
+          <button class="btn btn-success btn-sm" title="Aprovar" onclick="aprovarDoc(${doc.id})">✓</button>
+          <button class="btn btn-danger btn-sm" title="Recusar" onclick="recusarDoc(${doc.id})">✗</button>` : ''}
+        ${tipo==='funcionario' && pode('aprovar_doc') ? `<button class="btn btn-secondary btn-sm" title="Isentar: não exigir este documento deste colaborador (dá pra desfazer na ficha dele)" onclick="isentarDoc(${ref.id},'${de.id}')">🚫 Isentar</button>`:''}
+        ${doc && pode('enviar_doc') ? `<button class="btn btn-danger btn-sm" title="Excluir e reenviar" onclick="excluirDoc(${doc.id})">🗑</button>`:''}
+        ${pode('enviar_doc')?`<button class="btn btn-primary btn-sm" onclick="uploadDoc('${tipo}',${ref.id},'${de.id}','${esc(de.nome)}',${de.validadeDias||'null'}${obraArg})">📎 ${doc?'Atualizar':'Enviar'}</button>`:''}
+      </div>
     </div>
-    <span class="status ${s.cls}">${s.label}</span>
-    <div class="small-actions">
-      ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Abrir / visualizar documento" onclick="abrirDoc(${doc.id})">👁️ Abrir</button>`:''}
-      ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
-      ${doc && doc.arquivoPath && DB.config.iaHabilitada!==false ? `<button class="btn btn-secondary btn-sm" title="Analisar com IA em 2º plano" onclick="analisarDocBg(${doc.id})">🤖 Analisar</button>`:''}
-      ${doc && de.exigeData!==false && pode('enviar_doc') ? `<button class="btn btn-secondary btn-sm" title="Informar/corrigir data de emissão e validade sem reenviar o arquivo" onclick="editarDataDoc(${doc.id})">📅 Data${!doc.emitidoEm?' ⚠️':''}</button>`:''}
-      ${doc && pode('aprovar_doc') && doc.sesmtStatus==='pendente' ? `
-        <button class="btn btn-success btn-sm" title="Aprovar" onclick="aprovarDoc(${doc.id})">✓</button>
-        <button class="btn btn-danger btn-sm" title="Recusar" onclick="recusarDoc(${doc.id})">✗</button>` : ''}
-      ${tipo==='funcionario' && pode('aprovar_doc') ? `<button class="btn btn-secondary btn-sm" title="Isentar: não exigir este documento deste colaborador (dá pra desfazer na ficha dele)" onclick="isentarDoc(${ref.id},'${de.id}')">🚫 Isentar</button>`:''}
-      ${doc && pode('enviar_doc') ? `<button class="btn btn-danger btn-sm" title="Excluir e reenviar" onclick="excluirDoc(${doc.id})">🗑</button>`:''}
-    </div>
-    ${pode('enviar_doc')?`<button class="btn btn-primary btn-sm" onclick="uploadDoc('${tipo}',${ref.id},'${de.id}','${esc(de.nome)}',${de.validadeDias||'null'}${obraArg})">📎 ${doc?'Atualizar':'Enviar'}</button>`:'<div></div>'}
+    ${doc && doc.arquivoPath && de.exigeData!==false && !doc.emitidoEm ? `<div style="margin-top:8px;font-size:12px;color:#b45309;font-weight:600">⚠️ A IA não leu a data — clique em <b>📅 Data</b> para informar (não precisa reenviar o arquivo).</div>`:''}
+    ${doc && (doc.iaNota || doc.sesmtMotivo) ? `
+      <div style="margin-top:10px;padding:10px 14px;background:#f9fafb;border-left:3px solid ${doc.sesmtStatus==='recusado'?'var(--crit)':doc.iaStatus==='recusado'?'var(--crit)':doc.iaStatus==='duvida'?'var(--warn)':'var(--info)'};border-radius:4px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">
+        ${doc.iaNota?`<div><b>🤖 Análise da IA (${doc.iaStatus}):</b>\n${escapeHtml(doc.iaNota)}</div>`:''}
+        ${doc.sesmtMotivo?`<div style="color:var(--crit);margin-top:8px;padding-top:8px;border-top:1px solid #fecaca"><b>✗ Motivo da recusa SESMT:</b>\n${escapeHtml(doc.sesmtMotivo)}</div>`:''}
+      </div>` : ''}
   </div>`;
 }
 
@@ -3268,12 +3275,8 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
       <input id="f_arq" type="file" accept="application/pdf,image/jpeg,image/png,image/jpg" style="display:none" onchange="atualizarDropLabel(this)">
     </div>
     <div class="alert ${temGemini?'success':'info'}">
-      ${temGemini ? '🤖 <b>Análise por IA ativa</b> — Gemini vai ler o PDF e validar automaticamente.' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
+      ${temGemini ? '🤖 <b>Análise por IA ativa</b> — o Gemini lê o PDF e preenche as datas automaticamente. Se não conseguir ler a data, o documento fica com um aviso e você informa depois pelo botão <b>📅 Data</b> (sem reenviar).' : '⚠️ Sem chave Gemini configurada — análise será simulada. Configure em Configurações.'}
     </div>
-    ${(docExigido&&docExigido.exigeData===false)?'':`<div class="grid-2">
-      <div class="form-group"><label>Data de Emissão</label><input id="f_emit" type="date" value="${emitido}"></div>
-      ${validadeDias?`<div class="form-group"><label>Validade</label><input id="f_val" type="date" value="${validade}"></div>`:''}
-    </div>`}
     <div id="iaLoading" style="display:none;text-align:center;padding:20px;background:#dbeafe;border-radius:8px;margin-top:12px">
       <div style="font-size:18px;margin-bottom:6px">🤖 Analisando documento com IA...</div>
       <div style="font-size:12px;color:var(--muted)">Lendo o documento e as datas — pode levar alguns segundos</div>
@@ -3300,7 +3303,10 @@ function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
     const vaiAnalisar = !!(arq && DB.config.iaHabilitada!==false);
     const iaIni = vaiAnalisar ? {iaStatus:'pendente', iaNota:'🤖 Analisando documento…'}
       : (existing && !arq ? {iaStatus:existing.iaStatus, iaNota:existing.iaNota} : {iaStatus:'pendente', iaNota:''});
-    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm: semData?'':val('f_emit'), validade: validadeDias?val('f_val'):null,
+    // datas: a IA preenche ao analisar. Ao reenviar arquivo novo, zera (IA relê); se só reabriu sem trocar arquivo, mantém as existentes.
+    const emitPrev = (existing && !arq) ? (existing.emitidoEm||'') : '';
+    const valPrev  = (existing && !arq) ? (existing.validade||null) : null;
+    const data = {refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:nomeArq,arquivoPath,arquivoData:'',emitidoEm: semData?'':emitPrev, validade: valPrev,
       iaStatus:iaIni.iaStatus, iaNota:iaIni.iaNota, sesmtStatus:'pendente', sesmtMotivo:'', sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
     const _volta = _docsModalRef && _docsModalRef.tipo===tipo && _docsModalRef.refId===refId ? Object.assign({},_docsModalRef) : null;
