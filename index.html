@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.17.17">
+<meta name="app-version" content="2026.07.17.18">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -532,7 +532,7 @@ async function syncToSupabase(){
 }
 function uid(){ return Date.now()+Math.floor(Math.random()*10000); }
 function hoje(){ return new Date().toISOString().slice(0,10); }
-function plusDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function plusDays(n, base){ const d = base ? new Date(base+'T00:00:00') : new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
 function seed(){ /* seed local removido - dados vem do Supabase */ load(); }
 function _seedDESATIVADO(){
@@ -2410,7 +2410,14 @@ OUTPUT: APENAS UM JSON PURO, SEM markdown, SEM backticks. Formato EXATO:
   "recomendacao": "se status != aprovado, o que fazer para corrigir; se aprovado, vazio"
 }
 
-IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (lista) e "recomendacao" sao OBRIGATORIOS e devem explicar de forma CLARA, em portugues simples, o MOTIVO da recusa/duvida e exatamente o que a empresa deve fazer para corrigir. Tambem preencha "emissao" e "validade" sempre que conseguir ler no documento.`;
+IMPORTANTE: Se "status" for "recusado" ou "duvida", os campos "divergencias" (lista) e "recomendacao" sao OBRIGATORIOS e devem explicar de forma CLARA, em portugues simples, o MOTIVO da recusa/duvida e exatamente o que a empresa deve fazer para corrigir.
+
+═══ DATAS (MUITO IMPORTANTE) ═══
+Leia com atencao e SEMPRE preencha "emissao" e "validade" no formato AAAA-MM-DD:
+- "emissao": data em que o documento foi emitido/assinado/realizado (ex: data do exame no ASO, data de emissao do certificado/treinamento, data do RG). Procure termos como "Data", "Emitido em", "Data do exame", "Realizado em", "Data de emissao".
+- "validade": data de validade/vencimento SE constar no documento (termos "Validade", "Valido ate", "Vencimento", "Proximo exame"). Muitos ASOs e certificados trazem validade explicita — use a do documento.
+- Converta qualquer formato (dd/mm/aaaa, "12 de marco de 2026", etc) para AAAA-MM-DD. Se o ano tiver 2 digitos, assuma 20XX.
+- Se realmente NAO houver a data no documento, deixe o campo como null (NAO invente e NAO use a data de hoje).`;
 
   try{
     const base64 = await fileToBase64(file);
@@ -2504,7 +2511,7 @@ function formatarNotaIA(p){
 
 /* ===== DASHBOARD ===== */
 function renderDashboard(){
-  let emps = escopoEmpresas(), funcs = escopoFuncionarios(), maqs = escopoMaquinas();
+  let emps = escopoEmpresas(), funcs = escopoFuncionarios().filter(f=>f.ativo!==false), maqs = escopoMaquinas();
   if(filtros.obraId){
     const oid = parseInt(filtros.obraId);
     funcs = funcs.filter(f=>f.obraId===oid);
@@ -2931,6 +2938,9 @@ function renderMinhaEmpresa(){
 /* ===== FUNCIONÁRIOS ===== */
 function renderFuncionarios(){
   let lista = escopoFuncionarios();
+  const arquivados = lista.filter(f=>f.ativo===false).length;
+  const verArq = filtros.verArquivados===true;
+  lista = lista.filter(f=> verArq ? f.ativo===false : f.ativo!==false); // desligados/arquivados saem da tela principal
   if(filtros.obraId) lista = lista.filter(f=>f.obraId==filtros.obraId);
   if(filtros.empresaId) lista = lista.filter(f=>f.empresaId==filtros.empresaId);
   if(filtros.busca){
@@ -2951,8 +2961,11 @@ function renderFuncionarios(){
   const isEmpresa = session.tipo==='empresa';
   document.getElementById('main').innerHTML = `
     <div class="page-header">
-      <div><div class="page-title">${isEmpresa?'Meus Colaboradores':'Colaboradores'}</div><div class="page-sub">Cada função exige documentações específicas</div></div>
-      ${pode('enviar_doc')?'<button class="btn btn-primary" onclick="editFuncionario()">+ Novo Colaborador</button>':''}
+      <div><div class="page-title">${isEmpresa?'Meus Colaboradores':'Colaboradores'}${verArq?' — arquivados':''}</div><div class="page-sub">${verArq?'Colaboradores desligados/arquivados (histórico preservado)':'Cada função exige documentações específicas'}</div></div>
+      <div style="display:flex;gap:8px">
+        ${(arquivados>0||verArq)?`<button class="btn btn-secondary" onclick="filtros.verArquivados=${!verArq};go('funcionarios')">${verArq?'← Voltar aos ativos':'🗄️ Ver arquivados ('+arquivados+')'}</button>`:''}
+        ${pode('enviar_doc')&&!verArq?'<button class="btn btn-primary" onclick="editFuncionario()">+ Novo Colaborador</button>':''}
+      </div>
     </div>
     ${toolbarFiltros({busca:true,obra:true,empresa:true,status:true})}
     <div class="card">
@@ -2973,12 +2986,28 @@ function renderFuncionarios(){
               <button class="btn btn-secondary btn-sm" onclick="verDocsRef('funcionario',${f.id},'${esc(f.nome)}')">📄</button>
               <button class="btn btn-secondary btn-sm" title="Cracha / QR Code${f.crachaEnviadoEm?' — enviado em '+new Date(f.crachaEnviadoEm).toLocaleDateString('pt-BR'):''}" onclick="crachaFuncionario(${f.id})">🪪${f.crachaEnviadoEm?'<span style="color:#16a34a;font-weight:700"> ✓</span>':''}</button>
               ${pode('enviar_doc')?`<button class="btn btn-secondary btn-sm" onclick="editFuncionario(${f.id})">Editar</button>`:''}
+              ${pode('enviar_doc')?(f.ativo===false
+                ? `<button class="btn btn-success btn-sm" title="Reativar: volta para a lista principal" onclick="reativarFuncionario(${f.id})">♻️ Reativar</button>`
+                : `<button class="btn btn-secondary btn-sm" title="Arquivar: colaborador desligado sai da tela principal, mas o histórico e documentos ficam guardados" onclick="arquivarFuncionario(${f.id})">🗄️ Arquivar</button>`):''}
             </td>
           </tr>`;}).join('')}</tbody>
       </table>
       ${lista.length===0?'<div class="empty"><div class="empty-icon">👷</div>Nenhum colaborador</div>':''}
     </div>
   `;
+}
+/* Arquivar = colaborador desligado. Reaproveita o campo `ativo` (já existe no banco): ativo=false sai da tela
+   principal, da portaria, das cobranças e do dashboard — mas os documentos/histórico ficam guardados. */
+function arquivarFuncionario(id){
+  if(!pode('enviar_doc')){ toast('Sem permissão','err'); return; }
+  const f = DB.funcionarios.find(x=>x.id===id); if(!f) return;
+  if(!confirm('Arquivar '+f.nome+'?\n\nUsado quando o colaborador é DESLIGADO. Ele sai da tela principal, da portaria e das cobranças, mas os documentos e o histórico ficam guardados (acesse em "🗄️ Ver arquivados"). Dá pra reativar depois.')) return;
+  f.ativo=false; save(); toast(f.nome+' arquivado'); go('funcionarios');
+}
+function reativarFuncionario(id){
+  if(!pode('enviar_doc')){ toast('Sem permissão','err'); return; }
+  const f = DB.funcionarios.find(x=>x.id===id); if(!f) return;
+  f.ativo=true; save(); toast(f.nome+' reativado'); go('funcionarios');
 }
 function editFuncionario(id){
   const f = id ? DB.funcionarios.find(x=>x.id===id) : {nome:'',cpf:'',funcaoId:null,empresaId:session.tipo==='empresa'?session.empresaId:null,obraId:null,ativo:true};
@@ -3030,7 +3059,7 @@ function editFuncionario(id){
     })();<\/script>
   `, ()=>{
     const data={nome:val('f_nome'),cpf:val('f_cpf'),funcaoId:parseInt(val('f_funcao'))||null,
-      empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:true,
+      empresaId:parseInt(val('f_emp'))||f.empresaId,obraId:parseInt(val('f_obra'))||null,ativo:(id?f.ativo!==false:true),
       socio:!!document.getElementById('f_socio')?.checked, vinculo:val('f_vinculo')||'clt'};
     if(!data.nome||!data.cpf||!data.empresaId||!data.funcaoId){ toast('Preencha todos os campos','err'); return false; }
     const isNovo = !id;
@@ -3161,6 +3190,7 @@ function renderDocRow(tipo, ref, de, obraId){
       <div class="doc-meta">
         ${doc?`📎 ${doc.arquivo}${(de&&de.exigeData===false)?'':` • Emitido: ${doc.emitidoEm||'-'}`}${doc.validade?` • Validade: ${doc.validade}`:''}`:'<span style="color:var(--muted)">⤓ Arraste o PDF aqui ou clique em Enviar →</span>'}
       </div>
+      ${doc && doc.arquivoPath && de.exigeData!==false && !doc.emitidoEm ? `<div style="margin-top:4px;font-size:12px;color:#b45309;font-weight:600">⚠️ A IA não leu a data — clique em <b>📅 Data</b> para informar (não precisa reenviar o arquivo).</div>`:''}
       ${doc && (doc.iaNota || doc.sesmtMotivo) ? `
         <div style="margin-top:8px;padding:10px 12px;background:#f9fafb;border-left:3px solid ${doc.sesmtStatus==='recusado'?'var(--crit)':doc.iaStatus==='recusado'?'var(--crit)':doc.iaStatus==='duvida'?'var(--warn)':'var(--info)'};border-radius:4px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">
           ${doc.iaNota?`<div><b>🤖 Análise da IA (${doc.iaStatus}):</b>\n${escapeHtml(doc.iaNota)}</div>`:''}
@@ -3172,6 +3202,7 @@ function renderDocRow(tipo, ref, de, obraId){
       ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Abrir / visualizar documento" onclick="abrirDoc(${doc.id})">👁️ Abrir</button>`:''}
       ${doc && doc.arquivoPath ? `<button class="btn btn-secondary btn-sm" title="Baixar" onclick="baixarDoc(${doc.id})">⬇</button>`:''}
       ${doc && doc.arquivoPath && DB.config.iaHabilitada!==false ? `<button class="btn btn-secondary btn-sm" title="Analisar com IA em 2º plano" onclick="analisarDocBg(${doc.id})">🤖 Analisar</button>`:''}
+      ${doc && de.exigeData!==false && pode('enviar_doc') ? `<button class="btn btn-secondary btn-sm" title="Informar/corrigir data de emissão e validade sem reenviar o arquivo" onclick="editarDataDoc(${doc.id})">📅 Data${!doc.emitidoEm?' ⚠️':''}</button>`:''}
       ${doc && pode('aprovar_doc') && doc.sesmtStatus==='pendente' ? `
         <button class="btn btn-success btn-sm" title="Aprovar" onclick="aprovarDoc(${doc.id})">✓</button>
         <button class="btn btn-danger btn-sm" title="Recusar" onclick="recusarDoc(${doc.id})">✗</button>` : ''}
@@ -3203,8 +3234,9 @@ let _iaUpload=null, _upCtx=null, _massaCtx=null;
 function uploadDoc(tipo, refId, docId, docNome, validadeDias, obraId){
   obraId = obraId||null;
   const existing = getDoc(tipo, refId, docId, obraId);
-  const emitido = existing?.emitidoEm || hoje();
-  const validade = validadeDias ? plusDays(validadeDias) : '';
+  // NÃO cravar mais a data de hoje: a IA lê a data do documento; se não achar, fica em branco p/ informar manualmente
+  const emitido = existing?.emitidoEm || '';
+  const validade = existing?.validade || '';
   const docExigido = DB.catalogoDocs.find(d=>d.id===docId);
   let contexto = '';
   if(tipo==='funcionario'){
@@ -3395,7 +3427,7 @@ async function salvarMassa(){
     if(upErr){ ign++; continue; }
     const existing=getDoc(tipo,refId,docId,obraId);
     const data={refTipo:tipo,refId,docId,obraId:obraId||null,arquivo:arq.name,arquivoPath,arquivoData:'',
-      emitidoEm:(de.exigeData===false)?'':hoje(), validade: de.validadeDias?plusDays(de.validadeDias):null,
+      emitidoEm:'', validade: null, // a IA lê as datas do documento; se não achar, ficam em branco (aviso na linha p/ informar manual)
       iaStatus:'pendente', iaNota: analisarIA?'🤖 Analisando documento…':'', sesmtStatus:'pendente',sesmtMotivo:'',sesmtPor:null};
     if(existing) Object.assign(existing,data); else DB.documentos.push({id:uid(),...data});
     if(analisarIA) pendentes.push({docId, de, arq});
@@ -3453,6 +3485,27 @@ async function excluirDoc(docId){
   if(d && typeof d.id==='number' && d.id<1e9){ await sb.from('documentos').delete().eq('id', d.id); }
   DB.documentos = DB.documentos.filter(d=>d.id!==docId);
   save(); toast('Documento excluído'); closeModal(); go(currentPage);
+}
+/* Informar/corrigir data de emissão e validade SEM reenviar o arquivo (usado quando a IA não leu a data) */
+function editarDataDoc(docId){
+  if(!pode('enviar_doc')){ toast('Sem permissão','err'); return; }
+  const d = DB.documentos.find(x=>x.id===docId); if(!d){ toast('Documento não encontrado','err'); return; }
+  const de = DB.catalogoDocs.find(c=>c.id===d.docId) || {nome:d.docId};
+  const temVal = !!(de.validadeDias);
+  const volta = _docsModalRef ? Object.assign({},_docsModalRef) : null;
+  showModal('📅 Datas do documento — '+((de&&de.nome)||''), `
+    <div class="alert info" style="font-size:12px">Informe a data que consta <b>no próprio documento</b>. Não precisa reenviar o arquivo.</div>
+    <div class="form-group"><label>Data de Emissão</label><input id="ed_emit" type="date" value="${d.emitidoEm||''}"></div>
+    ${temVal?`<div class="form-group"><label>Validade <span style="color:#888;font-weight:400">(deixe em branco p/ calcular ${de.validadeDias} dias após a emissão)</span></label><input id="ed_val" type="date" value="${d.validade||''}"></div>`:''}
+  `, ()=>{
+    const emit = val('ed_emit');
+    if(!emit){ toast('Informe a data de emissão','err'); return false; }
+    d.emitidoEm = emit;
+    if(temVal){ d.validade = val('ed_val') || plusDays(de.validadeDias, emit); }
+    save(); toast('Datas atualizadas'); closeModal();
+    if(volta) setTimeout(()=>verDocsRef(volta.tipo,volta.refId,volta.nome), 80); else go(currentPage);
+    return true;
+  });
 }
 /* Crachá automático quando o colaborador fica 100% OK (usado na aprovação manual E na auto-aprovação por IA) */
 function _checaCrachaAuto(_func,_antesOK){
