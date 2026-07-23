@@ -9,7 +9,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <!-- VERSÃO DO APP — atualize a cada deploy (formato: AAAA.MM.DD.N) -->
-<meta name="app-version" content="2026.07.17.19">
+<meta name="app-version" content="2026.07.23.20">
 <meta name="theme-color" content="#1a3d7c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -874,8 +874,8 @@ function mfaEnrolmentFlow(perfil){
       }
     }catch(e){ console.warn('limpeza fatores',e); }
     // Friendly name único (timestamp) garante que não colide nem em casos exóticos
-    const friendly = `SESMT - ${perfil.email} - ${Date.now()}`;
-    const {data, error} = await sb.auth.mfa.enroll({factorType:'totp', friendlyName:friendly, issuer:'SESMT B&M'});
+    const friendly = `BEMER DOCS - ${perfil.email} - ${Date.now()}`;
+    const {data, error} = await sb.auth.mfa.enroll({factorType:'totp', friendlyName:friendly, issuer:'BEMER DOCS'});
     if(error){ toast('Erro ao iniciar 2FA: '+error.message,'err'); return resolve(false); }
     const factorId = data.id;
     let verificado = false;
